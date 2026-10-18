@@ -10,6 +10,7 @@ import { newToken, hashToken } from '@/lib/tokens';
 import { sendActionEmail } from '@/lib/mail';
 import { audit } from '@/lib/audit';
 import { blankAssessment, summarise } from '@/lib/summary';
+import { createApiKey } from '@/lib/apikeys';
 
 export type ActionState = { ok?: string; error?: string } | null;
 
@@ -85,6 +86,50 @@ export async function setOrgAi(_: ActionState, fd: FormData): Promise<ActionStat
     await audit({ orgId, userId: v.id, action: on ? 'org.ai_enabled' : 'org.ai_disabled' });
     revalidatePath('/', 'layout');
     return { ok: on ? 'AI assistance switched on.' : 'AI assistance switched off.' };
+  } catch (e) { return fail(e); }
+}
+
+export async function setOrgPlan(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    if (v.role !== 'ITUTI_ADMIN') return { error: 'Only Ituti admins can change plans.' };
+    const orgId = String(fd.get('orgId'));
+    const plan = z.enum(['per_assessment', 'enterprise', 'internal']).parse(fd.get('plan'));
+    await db.organizations.update({ id: orgId }, { plan });
+    await audit({ orgId, userId: v.id, action: 'org.plan', detail: { plan } });
+    revalidatePath('/', 'layout');
+    return { ok: 'Plan saved.' };
+  } catch (e) { return fail(e); }
+}
+
+export async function createOrgApiKey(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    if (v.role !== 'ITUTI_ADMIN') return { error: 'Only Ituti admins can create API keys.' };
+    const orgId = String(fd.get('orgId'));
+    const name = z.string().trim().min(2).max(120).parse(fd.get('name'));
+    if (!(await db.organizations.first({ id: orgId }))) return { error: 'Client not found.' };
+    if ((await db.apiKeys.count({ orgId, revokedAt: null })) >= 10) return { error: 'This client already has 10 active keys. Revoke one first.' };
+    const { key } = await createApiKey(orgId, name, v.id);
+    await audit({ orgId, userId: v.id, action: 'apikey.created', detail: { name, prefix: key.slice(0, 12) } });
+    revalidatePath('/', 'layout');
+    return { ok: `Key created. Copy it now; it will not be shown again: ${key}` };
+  } catch (e) {
+    if (e instanceof z.ZodError) return { error: 'Give the key a name of at least two characters.' };
+    return fail(e);
+  }
+}
+
+export async function revokeOrgApiKey(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    if (v.role !== 'ITUTI_ADMIN') return { error: 'Only Ituti admins can revoke API keys.' };
+    const id = String(fd.get('id'));
+    const [k] = await db.apiKeys.update({ id, revokedAt: null }, { revokedAt: new Date() });
+    if (!k) return { error: 'Key not found or already revoked.' };
+    await audit({ orgId: k.orgId, userId: v.id, action: 'apikey.revoked', detail: { name: k.name, prefix: k.prefix } });
+    revalidatePath('/', 'layout');
+    return { ok: `Revoked ${k.name}.` };
   } catch (e) { return fail(e); }
 }
 

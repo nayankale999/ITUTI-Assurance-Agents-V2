@@ -193,6 +193,76 @@ async function main() {
     check('the report lists agent answers with their sources', rep.includes('Answers proposed by the assessment agent') && rep.includes('validation-report.md'));
     check('the editor shows the Evidence and agent tab', (await (await get(`/o/${orgA.slug}/systems/${s1.id}`, c.contrib)).text()).includes('Evidence and agent'));
 
+    // ---------- A2A agent endpoint (IBM watsonx Orchestrate and other A2A clients) ----------
+    const card = await get('/.well-known/agent-card.json');
+    const cardBody = await card.json().catch(() => ({}));
+    check('the agent card is published at the well-known address', card.status === 200 && cardBody.protocolVersion === '0.3.0' && String(cardBody.url).endsWith('/api/a2a') && cardBody.skills?.length >= 3);
+    const { createApiKey } = await import('../src/lib/apikeys');
+    const keyA = (await createApiKey(orgA.id, 'e2e A', admin.id)).key;
+    const keyB = (await createApiKey(orgB.id, 'e2e B', admin.id)).key;
+    await db.aiSystems.insert({ orgId: orgB.id, name: 'Secret claims model', data: { profile: { name: 'Secret claims model' } } });
+    await db.organizations.update({ id: orgB.id }, { aiEnabled: true });
+    let rpcId = 0;
+    const rpc = (key: string | null, method: string, params: unknown, headerStyle: 'bearer' | 'x-api-key' = 'bearer') => fetch(`${BASE}/api/a2a`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(key ? (headerStyle === 'bearer' ? { authorization: `Bearer ${key}` } : { 'x-api-key': key }) : {}) },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),
+    });
+    const say = async (key: string, text: string, contextId?: string, extraParts: unknown[] = []) => {
+      const r = await rpc(key, 'message/send', { message: { kind: 'message', role: 'user', messageId: randomBytes(8).toString('hex'), parts: [{ kind: 'text', text }, ...extraParts], ...(contextId ? { contextId } : {}) } });
+      const j = await r.json();
+      const task = j.result;
+      const reply = task?.status?.message?.parts?.map((x: any) => x.text).join('') || '';
+      return { status: r.status, task, reply, raw: j };
+    };
+    check('the endpoint refuses calls without an API key', (await rpc(null, 'message/send', {})).status === 401);
+    check('the endpoint refuses an unknown API key', (await rpc('ita_not-a-real-key', 'message/send', {})).status === 401);
+    const port = await say(keyA, 'Show me our portfolio');
+    check('message/send returns a completed task', port.status === 200 && port.task?.kind === 'task' && port.task?.status?.state === 'completed', JSON.stringify(port.raw).slice(0, 300));
+    check('the portfolio lists this client\'s systems only', port.reply.includes('Loan scoring') && !port.reply.includes('Secret claims model'));
+    const portB = await say(keyB, 'Show me our portfolio', undefined);
+    check('another client\'s key sees only its own systems', portB.reply.includes('Secret claims model') && !portB.reply.includes('Loan scoring'));
+    check('the x-api-key header is accepted too', (await (await rpc(keyA, 'tasks/get', { id: port.task?.id }, 'x-api-key')).json()).result?.status?.state === 'completed');
+    const crossGet = await (await rpc(keyB, 'tasks/get', { id: port.task?.id })).json();
+    check('another client cannot read this client\'s task', !!crossGet.error && !crossGet.result);
+    const ctxId = 'ctx-' + randomBytes(6).toString('hex');
+    const reg = await say(keyA, 'Please register "Fraud model"', ctxId);
+    check('the agent registers a new system', reg.reply.includes('"created":true') && !!(await db.aiSystems.first({ orgId: orgA.id, name: 'Fraud model' })));
+    const filePart = { kind: 'file', file: { name: 'fraud-validation.md', mimeType: 'text/markdown', bytes: Buffer.from(report.replace('Credit scoring', 'Fraud')).toString('base64') } };
+    const att = await say(keyA, 'attach this to "Fraud model"', ctxId, [filePart]);
+    check('attached files are saved as evidence', att.reply.includes('fraud-validation.md') && (await db.documents.count({ systemId: (await db.aiSystems.first({ orgId: orgA.id, name: 'Fraud model' }))!.id })) === 1, att.reply.slice(0, 200));
+    const ask = await say(keyA, 'assess "Fraud model"', ctxId);
+    check('a billable assessment asks for confirmation first', ask.reply.includes('needs_confirmation') && !(await db.agentRuns.first({ systemId: (await db.aiSystems.first({ orgId: orgA.id, name: 'Fraud model' }))!.id })));
+    const go = await say(keyA, 'assess "Fraud model" - confirmed', ctxId);
+    check('after confirmation the assessment starts in the background', go.reply.includes('"started":true'));
+    const fraud = (await db.aiSystems.first({ orgId: orgA.id, name: 'Fraud model' }))!;
+    let fraudRun = null;
+    for (let i = 0; i < 60; i++) { fraudRun = await db.agentRuns.first({ systemId: fraud.id }); if (fraudRun && !['queued', 'running'].includes(fraudRun.status)) break; await new Promise(r => setTimeout(r, 500)); }
+    check('the assessment run completes, marked as started through A2A', fraudRun?.status === 'completed' && fraudRun?.source === 'a2a', JSON.stringify({ s: fraudRun?.status, e: fraudRun?.error }));
+    const use = await db.usage.find({ systemId: fraud.id });
+    check('one billable assessment is metered', use.length === 1 && use[0].billable && use[0].source === 'a2a' && use[0].plan === 'per_assessment');
+    check('re-running within 30 days is not billed again', !(await say(keyA, 'assess "Fraud model"', ctxId)).reply.includes('needs_confirmation'));
+    for (let i = 0; i < 60; i++) { const r = await db.agentRuns.first({ systemId: fraud.id, status: ['queued', 'running'] }); if (!r) break; await new Promise(res => setTimeout(res, 500)); }
+    check('the re-run adds no usage', (await db.usage.count({ systemId: fraud.id })) === 1);
+    await db.organizations.update({ id: orgA.id }, { plan: 'enterprise' });
+    const { wouldBill } = await import('../src/lib/usage');
+    check('enterprise clients are never asked to confirm billing', !(await wouldBill(orgA.id, s1.id)) && !(await wouldBill(orgA.id, fraud.id)));
+    const st = await say(keyA, 'status of "Fraud model"', ctxId);
+    check('status reports proposals waiting and the review link', st.reply.includes('proposals_waiting_for_review') && st.reply.includes(`/systems/${fraud.id}`));
+    const ctxRow = await db.a2aContexts.first({ id: ctxId });
+    check('the conversation is remembered for its context', (ctxRow?.history.length || 0) >= 8);
+    const sse = await fetch(`${BASE}/api/a2a`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${keyA}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 99, method: 'message/stream', params: { message: { kind: 'message', role: 'user', messageId: 'm-stream', parts: [{ kind: 'text', text: 'status of "Fraud model"' }] } } }) });
+    const events = (await sse.text()).split('\n\n').filter(Boolean).map(chunk => JSON.parse(chunk.replace(/^data: /, '')));
+    const lastEv = events[events.length - 1]?.result;
+    check('message/stream sends server-sent events ending in a final completed status', !!sse.headers.get('content-type')?.includes('text/event-stream') && events.length >= 2 && lastEv?.kind === 'status-update' && lastEv?.final === true && lastEv?.status?.state === 'completed', JSON.stringify(events).slice(0, 300));
+    await db.organizations.update({ id: orgB.id }, { aiEnabled: false });
+    check('a client with AI switched off gets an explanation, not a run', (await say(keyB, 'Show me our portfolio')).reply.includes('switched off'));
+    await db.apiKeys.update({ orgId: orgB.id }, { revokedAt: new Date() });
+    check('a revoked key is refused', (await rpc(keyB, 'message/send', {})).status === 401);
+    check('the admin sees plan, usage and keys on the client page', await (async () => { const h = await (await get(`/o/${orgA.slug}`, c.admin)).text(); return h.includes('Billing and agent access') && h.includes('e2e A'); })());
+    check('client admins do not see API keys', !(await (await get(`/o/${orgA.slug}`, c.clientAdmin)).text()).includes('Billing and agent access'));
+
     // ---------- Sign-in rules (real email flow, links printed to the log) ----------
     const signInRequest = async (email: string, callbackUrl = '/') => {
       const csrfRes = await fetch(`${BASE}/api/auth/csrf`);

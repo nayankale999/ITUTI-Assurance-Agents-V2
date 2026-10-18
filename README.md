@@ -34,6 +34,21 @@ Safeguards:
 
 Runs happen in the background (a few minutes; up to 20) and continue if the page is closed. Settings: `ANTHROPIC_API_KEY`, and optionally `ANTHROPIC_AGENT_MODEL` (default `claude-opus-5-5`).
 
+## Agent endpoint for IBM watsonx Orchestrate (A2A)
+
+The assessment agent can be used from IBM watsonx Orchestrate, or any other platform that speaks the **A2A protocol, version 0.3.0** (JSON-RPC 2.0 over HTTPS).
+
+- **Agent card:** `https://assurance.ituti.tech/.well-known/agent-card.json` describes the agent, its skills and how to authenticate.
+- **Endpoint:** `https://assurance.ituti.tech/api/a2a` supports `message/send`, `message/stream` (server-sent events), `tasks/get` and `tasks/cancel`. Push notifications are not offered.
+- **Authentication:** an API key per client, sent as `Authorization: Bearer ita_…` or `x-api-key: ita_…`. Ituti admins create and revoke keys on the client's page under *Billing and agent access*; the key is shown once and only its hash is stored. A key only ever reaches its own client's systems, tasks and conversations.
+- **What it does:** a Claude-driven assistant (model `ANTHROPIC_MODEL`) with tools to list the client's systems, register a system, save pasted text or attached files (sent inline as base64) as evidence, start a pre-fill assessment, and report its status, gaps and the review and report links. Assessments run in the background; the reply comes straight back and the user asks for the status later. Accepting proposals stays a human step in the web app.
+- **Consent:** the agent refuses to work for a client until an Ituti admin switches AI assistance on for that client.
+- **IBM submission files** are in `ibm/`: the external agent registration for the watsonx Orchestrate ADK (`ituti-ai-assurance-agent.yaml`) and the TSV validation file IBM asks for (`validation.tsv`).
+
+### Plans and metering
+
+Each client has a plan, set by an Ituti admin: **per assessment**, **enterprise** (flat fee) or **internal/trial**. An assessment is counted when a pre-fill run completes for a system, whether started in the web app or through the agent; further runs on the same system within 30 days are included. Every assessment is recorded in `usage_events` with its plan and whether it is billable, ready to be reported to IBM's metering when the listing is paid. On the per-assessment plan the agent asks the user to confirm before starting a billable assessment.
+
 ## How data is stored
 
 Data is kept in **MySQL or MariaDB**. The tables are created automatically on first start (`src/data/schema.ts`), and later versions add their changes the same way. Uploaded files are kept in the folder set by `DATA_DIR`, with their extracted text in the database.
@@ -50,6 +65,8 @@ Data is kept in **MySQL or MariaDB**. The tables are created automatically on fi
 | `documents`, `document_chunks` | Uploaded evidence and its extracted text, with a full-text index |
 | `model_library` | Public information about foundation models, with source pages |
 | `agent_runs`, `proposals` | Agent runs, and every proposal with its sources and who accepted or rejected it |
+| `api_keys`, `usage_events` | Hashed API keys for the agent endpoint, and metered assessments |
+| `a2a_tasks`, `a2a_contexts` | A2A tasks and conversation history, per client |
 
 Saves that read before writing run in a transaction, and saves to a system carry a version number, so if two people edit the same system the second is warned instead of overwriting the first.
 
@@ -135,7 +152,7 @@ Set `TEST_DATABASE_URL` to a server URL whose user may create databases named `a
   - EU AI Act classification and scoring;
   - the agent's field validation, and parsing of model research;
   - the database layer: filters, transactions, concurrent saves, the CSV import, and document extraction and search (skipped without `TEST_DATABASE_URL`).
-- `npm run build && npm run test:e2e` starts the built app and runs 62 end-to-end checks. These cover role access, cross-client isolation, saving and version conflicts, cross-site request refusal, incidents, cascading deletes, the sign-in allow-list, invitations, the bootstrap admin, document upload and download rights, and a full agent run. The agent run uses a scripted stand-in for Claude (`AGENT_FAKE_LLM=1`, for tests only), including proposals with an invented quote, an invalid value and model-only control evidence, all of which must be refused.
+- `npm run build && npm run test:e2e` starts the built app and runs 86 end-to-end checks. These cover role access, cross-client isolation, saving and version conflicts, cross-site request refusal, incidents, cascading deletes, the sign-in allow-list, invitations, the bootstrap admin, document upload and download rights, a full agent run, and the A2A endpoint (agent card, keys, client isolation, billing confirmation, attachments, streaming and metering). The agent run uses a scripted stand-in for Claude (`AGENT_FAKE_LLM=1`, for tests only), including proposals with an invented quote, an invalid value and model-only control evidence, all of which must be refused.
 
 ## Where things are
 
@@ -154,6 +171,9 @@ Set `TEST_DATABASE_URL` to a server URL whose user may create databases named `a
 | `src/app/api/` | JSON endpoints for saving systems, incidents, CSV export and AI review |
 | `src/components/editor/SystemEditor.tsx` | The assessment editor |
 | `src/components/editor/AgentPanel.tsx` | The Evidence and agent tab |
+| `src/lib/a2a/` | The A2A endpoint: agent card, task store, and the assistant and its tools |
+| `src/app/api/a2a/route.ts` | JSON-RPC and streaming transport for A2A |
+| `src/lib/usage.ts`, `src/lib/apikeys.ts` | Metering and API keys |
 
 ## Security and data protection notes
 

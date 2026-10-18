@@ -32,6 +32,22 @@ export function fakeClient() {
             { type: 'text', text: '\n### trainingData\nNot published.' },
           ], 'end_turn');
         }
+        // The A2A assistant: one tool call chosen from the latest user text, then a reply quoting the result
+        if (typeof p.system === 'string' && p.system.startsWith('ITUTI_A2A_ASSISTANT')) {
+          const last = p.messages[p.messages.length - 1];
+          if (Array.isArray(last.content)) {
+            const out = lastResults(p)[0] || '';
+            return msg([{ type: 'text', text: `RESULT ${out.slice(0, 8000)}` }], 'end_turn');
+          }
+          const text = String(last.content).toLowerCase();
+          const sys = (text.match(/"([^"]+)"/)?.[1]) || 'Loan scoring';
+          if (text.includes('portfolio')) return msg([call('list_systems', {})]);
+          if (text.includes('register')) return msg([call('create_system', { name: sys, description: 'Registered through A2A for testing.' })]);
+          if (text.includes('attach')) return msg([call('attach_files', { system: sys })]);
+          if (text.includes('assess')) return msg([call('start_assessment', { system: sys, confirmed: text.includes('confirm') })]);
+          if (text.includes('status')) return msg([call('assessment_status', { system: sys })]);
+          return msg([{ type: 'text', text: 'I can list your AI systems, register one, run an assessment or report its status.' }], 'end_turn');
+        }
         const step = p.messages.filter(m => m.role === 'assistant').length;
         const results = lastResults(p);
         switch (step) {

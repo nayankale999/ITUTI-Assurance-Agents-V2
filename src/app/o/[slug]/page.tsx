@@ -4,7 +4,8 @@ import { orgForPage } from '@/lib/session';
 import { TIERS, OPTS } from '@/lib/assurance';
 import { ROLE_LABEL } from '@/lib/permissions';
 import { ActionForm, Submit } from '@/components/ActionForm';
-import { createSystem, renameOrg, setOrgAi } from '@/app/actions';
+import { createSystem, renameOrg, setOrgAi, setOrgPlan, createOrgApiKey, revokeOrgApiKey } from '@/app/actions';
+import { PLAN_LABEL, monthUsage, FREE_RERUN_DAYS } from '@/lib/usage';
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -96,6 +97,7 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
               <Submit className={org.aiEnabled ? 'btn' : 'btn primary'}>{org.aiEnabled ? 'Switch off' : 'Switch on'}</Submit>
             </ActionForm>
           )}
+          {viewer.role === 'ITUTI_ADMIN' && <AgentAccess orgId={org.id} plan={org.plan} aiEnabled={org.aiEnabled} />}
           {viewer.role === 'ITUTI_ADMIN' && <DeleteOrg orgId={org.id} name={org.name} />}
         </div></section>
       )}
@@ -111,6 +113,43 @@ function GroupRows({ unit, rows }: { unit: string; rows: React.ReactNode[] }) {
 }
 
 import { deleteOrg } from '@/app/actions';
+const day = (d: Date | null) => (d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '–');
+
+async function AgentAccess({ orgId, plan, aiEnabled }: { orgId: string; plan: string; aiEnabled: boolean }) {
+  const keys = await db.apiKeys.find({ orgId }, { orderBy: [['createdAt', 'desc']] });
+  const use = await monthUsage(orgId);
+  const base = (process.env.NEXTAUTH_URL || '').replace(/\/$/, '');
+  return (
+    <div className="agent-access">
+      <h4>Billing and agent access (IBM watsonx Orchestrate)</h4>
+      <ActionForm action={setOrgPlan} className="formrow" style={{ alignItems: 'flex-end' }}>
+        <input type="hidden" name="orgId" value={orgId} />
+        <label className="field"><span>Plan</span>
+          <select name="plan" id="org-plan" defaultValue={plan}>{Object.entries(PLAN_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+        </label>
+        <Submit>Save plan</Submit>
+      </ActionForm>
+      <p className="muted">This month: <b>{use.total}</b> assessment{use.total === 1 ? '' : 's'} ({use.billable} billable, {use.viaAgent} through the agent endpoint). An assessment is counted when a pre-fill run completes; re-runs on the same system within {FREE_RERUN_DAYS} days are included.</p>
+      <p className="muted">Agent card: <span className="mono">{base}/.well-known/agent-card.json</span> · endpoint: <span className="mono">{base}/api/a2a</span>{!aiEnabled && <> · <b>switch AI assistance on above, or the agent will refuse to run assessments</b></>}</p>
+      {keys.length > 0 && (
+        <table className="ledger"><thead><tr><th>Key</th><th>Created</th><th>Last used</th><th /></tr></thead>
+          <tbody>{keys.map(k => (
+            <tr key={k.id}>
+              <td>{k.name}<small className="muted mono" style={{ display: 'block' }}>{k.prefix}…</small></td>
+              <td className="muted">{day(k.createdAt)}</td>
+              <td className="muted">{k.revokedAt ? `Revoked ${day(k.revokedAt)}` : day(k.lastUsedAt)}</td>
+              <td className="num">{!k.revokedAt && <ActionForm action={revokeOrgApiKey} confirm="Revoking stops every integration using this key."><input type="hidden" name="id" value={k.id} /><Submit className="linkbtn">Revoke</Submit></ActionForm>}</td>
+            </tr>
+          ))}</tbody></table>
+      )}
+      <ActionForm action={createOrgApiKey} className="formrow" resetOnSuccess>
+        <input type="hidden" name="orgId" value={orgId} />
+        <label className="field"><span>New API key for this client</span><input type="text" name="name" id="key-name" placeholder="e.g. watsonx Orchestrate production" required minLength={2} maxLength={120} /></label>
+        <Submit>Create key</Submit>
+      </ActionForm>
+    </div>
+  );
+}
 function DeleteOrg({ orgId, name }: { orgId: string; name: string }) {
   return (
     <details>

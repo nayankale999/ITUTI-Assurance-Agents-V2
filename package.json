@@ -13,6 +13,7 @@
     "data:demo": "tsx scripts/demo.ts"
   },
   "dependencies": {
+    "@a2a-js/sdk": "^0.3.14",
     "@anthropic-ai/sdk": "0.131.0",
     "csv-parse": "7.0.3",
     "csv-stringify": "6.9.0",

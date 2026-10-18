@@ -1,0 +1,10 @@
+user query	expected response	agent identifier
+Which of our AI systems are high risk under the EU AI Act?	Lists the organisation's AI systems with each one's EU AI Act tier, naming the systems classed as high risk, with links to them in Ituti AI Assurance.	ituti_ai_assurance
+Show me our AI system portfolio	A list of the organisation's AI systems with EU AI Act tier, control readiness percentage, open incidents and proposals waiting for review.	ituti_ai_assurance
+Register a new AI system called Claims Triage that routes motor insurance claims using a machine-learning model, used in the UK	Confirms that Claims Triage was registered, gives its link, and suggests adding evidence documents before running an assessment.	ituti_ai_assurance
+Run an assessment on Claims Triage	Explains that this starts a billable assessment on the per-assessment plan (re-runs within 30 days included) and asks the user to confirm before starting. On an enterprise plan it starts straight away.	ituti_ai_assurance
+Yes, go ahead with the assessment	Confirms the assessment of Claims Triage has started in the background, says it takes a few minutes, notes how many evidence documents it will read, and invites the user to ask for the status later.	ituti_ai_assurance
+What is the status of the Claims Triage assessment?	Reports whether the run is running or finished, the agent's summary, the EU AI Act tier with reasons, control readiness, how many proposals are waiting for review by section, controls still without evidence, and the review and report links.	ituti_ai_assurance
+What evidence is missing for Claims Triage?	Lists the applicable controls that have no answer or are not met, in plain language, and links to the system's review screen.	ituti_ai_assurance
+Has the board-approved AI policy control been accepted?	States only what the system records: whether the control has an accepted answer or a proposal waiting for review, and never claims acceptance that has not happened.	ituti_ai_assurance
+What's the weather in London?	Politely says it helps with AI assurance for the organisation's own AI systems and describes what it can do.	ituti_ai_assurance

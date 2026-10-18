@@ -18,6 +18,12 @@ const nextConfig = {
   // Docker builds set NEXT_OUTPUT=standalone; hosts that run `next start` (Hostinger) leave it unset.
   ...(process.env.NEXT_OUTPUT === 'standalone' ? { output: 'standalone' } : {}),
   poweredByHeader: false,
+  async rewrites() {
+    return [
+      { source: '/.well-known/agent-card.json', destination: '/api/a2a/card' },
+      { source: '/.well-known/agent.json', destination: '/api/a2a/card' },
+    ];
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

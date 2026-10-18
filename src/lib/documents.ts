@@ -108,7 +108,7 @@ export async function extract(buf: Buffer, name: string): Promise<{ pieces: Piec
 }
 
 /** Stores an uploaded file and its extracted text. Extraction failures are kept as a failed document with the reason. */
-export async function addDocument(opts: { orgId: string; systemId: string; name: string; buf: Buffer; userId: string }): Promise<DocumentRow> {
+export async function addDocument(opts: { orgId: string; systemId: string; name: string; buf: Buffer; userId: string | null }): Promise<DocumentRow> {
   const name = path.basename(opts.name).slice(0, 200) || 'document';
   const e = ext(name);
   if (!ACCEPT[e]) throw new Error(`Files of type .${e || '?'} are not supported.`);

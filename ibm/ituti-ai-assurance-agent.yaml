@@ -1,0 +1,27 @@
+# watsonx Orchestrate external agent registration (A2A protocol 0.3.0).
+# Import with the watsonx Orchestrate ADK:  orchestrate agents import -f ibm/ituti-ai-assurance-agent.yaml
+# Replace the token with an Ituti AI Assurance API key for the client (created by an Ituti admin on the client's page).
+spec_version: v1
+kind: external
+name: ituti_ai_assurance
+title: Ituti AI Assurance
+nickname: ituti_ai_assurance
+provider: external_chat/A2A/0.3.0
+description: >
+  Assesses AI systems against the EU AI Act, UK requirements, ISO/IEC 42001 and the NIST AI RMF. Lists the
+  organisation's AI systems with their EU AI Act risk tier and control readiness, registers new systems and their
+  evidence, runs a conformity assessment that pre-fills answers from the evidence with cited sources, and reports
+  the results, the evidence still missing and links to review and report. Use it for any question about AI
+  regulation readiness, AI risk classification or assurance of a specific AI system.
+tags:
+  - AI governance
+  - EU AI Act
+  - Risk and compliance
+api_url: https://assurance.ituti.tech/api/a2a
+auth_scheme: BEARER_TOKEN
+auth_config:
+  token: ita_REPLACE_WITH_CLIENT_API_KEY
+chat_params:
+  stream: true
+  sendHistory: true
+  pushNotifications: false

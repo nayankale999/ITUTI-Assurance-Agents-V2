@@ -54,6 +54,19 @@ export const MIGRATIONS: [string, string[]][] = [
       status VARCHAR(16) NOT NULL, decidedById ${REF}, decidedAt ${AT_NULL}, createdAt ${AT},
       KEY ix_prop_sys (systemId, status), KEY ix_prop_run (runId)) ${T}`,
   ]],
+  ['003_a2a_billing', [
+    `ALTER TABLE organizations ADD COLUMN plan VARCHAR(32) NOT NULL DEFAULT 'per_assessment'`,
+    `ALTER TABLE agent_runs ADD COLUMN source VARCHAR(16) NOT NULL DEFAULT 'web'`,
+    `CREATE TABLE IF NOT EXISTS api_keys (id ${ID} PRIMARY KEY, orgId ${ID}, name VARCHAR(120) NOT NULL, prefix VARCHAR(20) NOT NULL,
+      keyHash CHAR(64) NOT NULL, createdById ${REF}, createdAt ${AT}, lastUsedAt ${AT_NULL}, revokedAt ${AT_NULL},
+      UNIQUE KEY uq_key_hash (keyHash), KEY ix_key_org (orgId)) ${T}`,
+    `CREATE TABLE IF NOT EXISTS usage_events (id ${ID} PRIMARY KEY, orgId ${ID}, kind VARCHAR(32) NOT NULL, systemId ${REF}, runId ${REF},
+      source VARCHAR(16) NOT NULL, billable TINYINT(1) NOT NULL, plan VARCHAR(32) NOT NULL, createdAt ${AT}, reportedAt ${AT_NULL},
+      KEY ix_usage_org (orgId, createdAt), KEY ix_usage_sys (systemId, kind, createdAt)) ${T}`,
+    `CREATE TABLE IF NOT EXISTS a2a_tasks (id VARCHAR(64) NOT NULL PRIMARY KEY, orgId ${ID}, contextId VARCHAR(64) NOT NULL, task LONGTEXT NOT NULL,
+      createdAt ${AT}, updatedAt ${AT}, KEY ix_a2a_ctx (orgId, contextId)) ${T}`,
+    `CREATE TABLE IF NOT EXISTS a2a_contexts (id VARCHAR(64) NOT NULL PRIMARY KEY, orgId ${ID}, history LONGTEXT NOT NULL, updatedAt ${AT}, KEY ix_a2ac_org (orgId)) ${T}`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */

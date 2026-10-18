@@ -6,6 +6,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { db, type AgentRun, type Source, type RunLogEntry } from '@/data';
 import type { AssessmentData } from '../assurance';
 import { audit } from '../audit';
+import { recordAssessment } from '../usage';
 import { searchDocuments, readDocument } from '../documents';
 import { llm, agentModel } from './llm';
 import { getModel, modelKey, DOSSIER_KEYS } from './models';
@@ -172,11 +173,11 @@ async function runTool(ctx: Ctx, name: string, input: Record<string, unknown>): 
 }
 
 /** Starts a run for a system unless one is already active. Returns the run. */
-export async function startRun(opts: { orgId: string; systemId: string; userId: string }): Promise<AgentRun> {
+export async function startRun(opts: { orgId: string; systemId: string; userId: string | null; source?: 'web' | 'a2a' }): Promise<AgentRun> {
   const active = await db.agentRuns.first({ systemId: opts.systemId, status: ['queued', 'running'] }, { orderBy: [['createdAt', 'desc']] });
   if (active && Date.now() - (active.heartbeatAt || active.createdAt).getTime() < STALE_MS) return active;
   if (active) await db.agentRuns.update({ id: active.id }, { status: 'failed', error: 'The run stopped responding.', finishedAt: new Date() });
-  const run = await db.agentRuns.insert({ orgId: opts.orgId, systemId: opts.systemId, startedById: opts.userId, model: agentModel(), status: 'queued', heartbeatAt: new Date(), log: [{ at: new Date().toISOString(), text: 'Queued' }] });
+  const run = await db.agentRuns.insert({ orgId: opts.orgId, systemId: opts.systemId, startedById: opts.userId, source: opts.source || 'web', model: agentModel(), status: 'queued', heartbeatAt: new Date(), log: [{ at: new Date().toISOString(), text: 'Queued' }] });
   void execute(run).catch(e => console.error('[agent] run crashed', e));
   return run;
 }
@@ -232,7 +233,8 @@ async function execute(run: AgentRun) {
     const summary = ctx.finished || 'The agent stopped before writing a summary. Review the proposals it made.';
     await ctx.log(`Finished with ${ctx.proposals} proposal${ctx.proposals === 1 ? '' : 's'}`);
     await db.agentRuns.update({ id: run.id }, { status: 'completed', summary, finishedAt: new Date(), proposals: ctx.proposals, inputTokens: usageIn, outputTokens: usageOut });
-    await audit({ orgId: run.orgId, systemId: run.systemId, userId: run.startedById, action: 'agent.completed', detail: { proposals: ctx.proposals } });
+    await recordAssessment({ orgId: run.orgId, systemId: run.systemId, runId: run.id, source: run.source }).catch(e => console.error('[usage] not recorded', e));
+    await audit({ orgId: run.orgId, systemId: run.systemId, userId: run.startedById, action: 'agent.completed', detail: { proposals: ctx.proposals, via: run.source } });
   } catch (e) {
     console.error('[agent] run failed', e);
     const msg = e instanceof Error ? e.message : 'The run failed.';
