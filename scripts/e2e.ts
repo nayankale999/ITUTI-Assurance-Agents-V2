@@ -20,6 +20,7 @@ process.env.NEXTAUTH_SECRET ||= 'e2e-secret-' + randomBytes(16).toString('hex');
 process.env.BOOTSTRAP_ADMIN_EMAIL = 'boss@itutitech.test';
 process.env.SMTP_HOST = '';
 process.env.ANTHROPIC_API_KEY = '';
+process.env.AGENT_FAKE_LLM = '1'; // scripted stand-in for Claude
 
 import mysql from 'mysql2/promise';
 import { db } from '../src/data';
@@ -140,6 +141,57 @@ async function main() {
     // ---------- Delete ----------
     check('contributor cannot delete a system', (await send(`/api/systems/${s2.id}`, 'DELETE', c.contrib, {})).status === 403);
     check('client admin deletes a system', (await send(`/api/systems/${s2.id}`, 'DELETE', c.clientAdmin, {})).status === 200);
+
+    // ---------- Evidence documents and the assessment agent ----------
+    const report = '# Credit scoring model: validation report\n\nThe model has been in production since March 2026 and scores retail loan applications.\n\nIndependent validation of the model was completed by the second-line Model Risk team in August 2026, with no material findings.\n\nGini on the out-of-time sample was 0.61 against an acceptance threshold of 0.55.\n';
+    const uploadAs = (cookie: string, name: string, body: string, origin = BASE) => {
+      const fd = new FormData();
+      fd.append('file', new Blob([body], { type: 'text/markdown' }), name);
+      return fetch(`${BASE}/api/systems/${s1.id}/documents`, { method: 'POST', headers: { cookie, origin }, body: fd });
+    };
+    check('viewer cannot upload documents', (await uploadAs(c.viewer, 'v.md', report)).status === 403);
+    check('cross-site upload is refused', (await uploadAs(c.contrib, 'x.md', report, 'https://evil.example')).status === 400);
+    const up = await uploadAs(c.contrib, 'validation-report.md', report);
+    const upBody = await up.json();
+    check('contributor uploads a document and its text is read', up.status === 201 && upBody.documents?.[0]?.status === 'ready', JSON.stringify(upBody));
+    const docId = upBody.documents?.[0]?.id;
+    check('viewer downloads the document', (await get(`/api/documents/${docId}`, c.viewer)).status === 200);
+    check('another client cannot download the document', (await get(`/api/documents/${docId}`, c.other)).status === 404);
+    check('agent is refused while AI assistance is off for the client', (await send(`/api/systems/${s1.id}/agent`, 'POST', c.contrib, {})).status === 503);
+    await db.organizations.update({ id: orgA.id }, { aiEnabled: true });
+    check('viewer cannot start the agent', (await send(`/api/systems/${s1.id}/agent`, 'POST', c.viewer, {})).status === 403);
+    const started = await send(`/api/systems/${s1.id}/agent`, 'POST', c.contrib, {});
+    check('contributor starts the agent', started.status === 202);
+    let state: any = null;
+    for (let i = 0; i < 60; i++) {
+      state = await (await get(`/api/systems/${s1.id}/agent`, c.contrib)).json();
+      if (state.run && !['queued', 'running'].includes(state.run.status)) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    check('the run finishes with a summary', state?.run?.status === 'completed' && /No evidence found/.test(state.run.summary || ''), JSON.stringify(state?.run));
+    const paths = (state?.proposals || []).map((x: any) => x.path).sort();
+    check('valid proposals are waiting for review', JSON.stringify(paths) === JSON.stringify(['card.limitations', 'ctrl.TEC-2', 'profile.lifecycle']), paths.join(','));
+    check('an invented quote, an invalid option and model-only control evidence are all refused', !paths.includes('ctrl.GOV-1') && !paths.includes('profile.sector') && !paths.includes('ctrl.DAT-1'));
+    const tec = state?.proposals?.find((x: any) => x.path === 'ctrl.TEC-2');
+    check('a proposal cites the document and the page section', tec?.sources?.[0]?.ref === docId && /^section/.test(tec?.sources?.[0]?.locator || ''));
+    const lim = state?.proposals?.find((x: any) => x.path === 'card.limitations');
+    check('a model-card proposal cites the provider page', lim?.sources?.some((x: any) => x.kind === 'web' && x.url === 'https://huggingface.co/example/model'));
+    check('the researched model is kept in the shared library', (await db.models.first({ mkey: 'example-ai/example-model-1' }))?.status === 'ready');
+    const ver = (await db.aiSystems.first({ id: s1.id }))!.version;
+    check('viewer cannot accept proposals', (await send(`/api/systems/${s1.id}/proposals`, 'POST', c.viewer, { action: 'accept', ids: [tec?.id], version: ver })).status === 403);
+    check('accepting on a stale version is refused', (await send(`/api/systems/${s1.id}/proposals`, 'POST', c.contrib, { action: 'accept', ids: [tec?.id], version: ver - 1 })).status === 409);
+    const acc = await send(`/api/systems/${s1.id}/proposals`, 'POST', c.contrib, { action: 'accept', ids: [tec?.id], version: ver });
+    const accBody = await acc.json();
+    check('accepting writes the value with its provenance', acc.status === 200 && accBody.data?.ctrl?.['TEC-2']?.s === 'met' && accBody.data?.prov?.['ctrl.TEC-2']?.p === tec?.id && accBody.version === ver + 1);
+    const edit = await send(`/api/systems/${s1.id}/proposals`, 'POST', c.contrib, { action: 'accept', ids: [lim?.id], version: accBody.version, value: 'Edited by the reviewer: not for final credit decisions.' });
+    check('an edited proposal is accepted with the edited text', edit.status === 200 && (await edit.json()).data?.card?.limitations?.startsWith('Edited by the reviewer'));
+    const lc = state?.proposals?.find((x: any) => x.path === 'profile.lifecycle');
+    const rej = await send(`/api/systems/${s1.id}/proposals`, 'POST', c.contrib, { action: 'reject', ids: [lc?.id], version: accBody.version + 1 });
+    check('rejecting leaves the assessment unchanged', rej.status === 200 && (await db.aiSystems.first({ id: s1.id }))?.data.profile?.lifecycle === undefined);
+    check('nothing is left to review', ((await (await get(`/api/systems/${s1.id}/agent`, c.contrib)).json()).proposals || []).length === 0);
+    const rep = await (await get(`/o/${orgA.slug}/systems/${s1.id}/report`, c.viewer)).text();
+    check('the report lists agent answers with their sources', rep.includes('Answers proposed by the assessment agent') && rep.includes('validation-report.md'));
+    check('the editor shows the Evidence and agent tab', (await (await get(`/o/${orgA.slug}/systems/${s1.id}`, c.contrib)).text()).includes('Evidence and agent'));
 
     // ---------- Sign-in rules (real email flow, links printed to the log) ----------
     const signInRequest = async (email: string, callbackUrl = '/') => {

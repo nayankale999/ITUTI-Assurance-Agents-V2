@@ -5,6 +5,15 @@ import { getViewer, systemAccess, type Viewer } from './session';
 export const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 export const err = (status: number, error: string) => json({ error }, status);
 
+/** Rejects cross-site uploads: the Origin header, when present, must be this app's own. */
+export function sameOrigin(req: Request): string | null {
+  const origin = req.headers.get('origin');
+  const expected = process.env.NEXTAUTH_URL ? new URL(process.env.NEXTAUTH_URL).origin : null;
+  if (!origin) return 'Missing origin.';
+  if (expected && origin !== expected) return 'Cross-site request refused.';
+  return null;
+}
+
 /** Rejects cross-site writes: mutating requests must be JSON from this app's own origin. */
 export function sameOriginJson(req: Request): string | null {
   const ct = req.headers.get('content-type') || '';

@@ -74,6 +74,20 @@ export async function deleteOrg(_: ActionState, fd: FormData): Promise<ActionSta
   redirect('/admin');
 }
 
+export async function setOrgAi(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    if (v.role !== 'ITUTI_ADMIN') return { error: 'Only Ituti admins can change this.' };
+    const orgId = String(fd.get('orgId'));
+    const on = fd.get('on') === 'true';
+    const [org] = await db.organizations.update({ id: orgId }, { aiEnabled: on });
+    if (!org) return { error: 'Client not found.' };
+    await audit({ orgId, userId: v.id, action: on ? 'org.ai_enabled' : 'org.ai_disabled' });
+    revalidatePath('/', 'layout');
+    return { ok: on ? 'AI assistance switched on.' : 'AI assistance switched off.' };
+  } catch (e) { return fail(e); }
+}
+
 /* ---------- Invitations ---------- */
 export async function inviteUser(_: ActionState, fd: FormData): Promise<ActionState> {
   try {

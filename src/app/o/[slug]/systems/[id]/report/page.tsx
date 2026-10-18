@@ -5,6 +5,7 @@ import { requireViewer, systemAccess } from '@/lib/session';
 import { PROFILE_SECTIONS, OPTS, AREAS, TIERS, classify, obligations, applicable, inherentRisk, readiness, frameworkCoverage, metricStatus, type AssessmentData } from '@/lib/assurance';
 import { residualText } from '@/lib/report';
 import { PrintButton } from '@/components/PrintButton';
+import { currentValue, displayValue, fieldFor } from '@/lib/agent/fields';
 
 export const metadata = { title: 'Assurance report' };
 const optLabel = (k: string, v: unknown) => (OPTS[k].find(o => o[0] === v) || [, ''])[1];
@@ -20,6 +21,13 @@ export default async function Report({ params }: { params: Promise<{ slug: strin
   const incidents = await db.incidents.find({ systemId: id }, { orderBy: [['date', 'desc'], ['createdAt', 'desc']] });
   const st = (s?: string) => ({ met: ['good', 'Met'], partial: ['warn', 'Partial'], gap: ['crit', 'Not met'], na: ['muted', 'N/A'] } as Record<string, string[]>)[s || ''] || ['muted', 'Open'];
   const tier = TIERS[r.tier] || TIERS.unknown;
+  // Answers that came from an accepted agent proposal and have not been changed since
+  const prov = Object.entries(sys.prov || {}).filter(([path, pv]) => { const cur = currentValue(sys, path); return cur !== undefined && JSON.stringify(cur) === pv.v; });
+  const fromAgent = new Set(prov.map(([path]) => path));
+  const props = prov.length ? await db.proposals.find({ id: prov.map(([, pv]) => pv.p) }) : [];
+  const byId = new Map(props.map(x => [x.id, x]));
+  const people = prov.length ? new Map((await db.users.find({ id: [...new Set(prov.map(([, pv]) => pv.u))] })).map(u => [u.id, u.name || u.email])) : new Map();
+  const Mark = ({ path }: { path: string }) => (fromAgent.has(path) ? <span className="agent-mark" title="Proposed by the assessment agent and accepted by a reviewer">Agent</span> : null);
   return (
     <>
       <div className="doc-bar no-print"><Link href={`/o/${slug}/systems/${id}`}>&larr; Back to the system</Link><PrintButton /></div>
@@ -39,7 +47,7 @@ export default async function Report({ params }: { params: Promise<{ slug: strin
         <table><tbody>{PROFILE_SECTIONS.flatMap(s => s.fields).filter(f => f.k !== 'name').map(f => {
           const v = p[f.k];
           const out = f.type === 'multi' ? (v || []).map((x: string) => optLabel(f.opts!, x)).join(', ') : f.type === 'select' ? optLabel(f.opts!, v) : v;
-          return <tr key={f.k}><th>{f.k === 'client' ? 'Business unit' : f.label}</th><td>{out || '–'}</td></tr>;
+          return <tr key={f.k}><th>{f.k === 'client' ? 'Business unit' : f.label}</th><td>{out || '–'}<Mark path={`profile.${f.k}`} /></td></tr>;
         })}</tbody></table>
         <h2>Classification rationale</h2>
         <ul>{r.reasons.length ? r.reasons.map(x => <li key={x}>{x}</li>) : <li>Not yet classified.</li>}</ul>
@@ -57,7 +65,7 @@ export default async function Report({ params }: { params: Promise<{ slug: strin
             <div key={ar}><h3>{name}</h3>
               <table><thead><tr><th style={{ width: 70 }}>Control</th><th>Requirement and evidence</th><th style={{ width: 90 }}>Status</th></tr></thead>
                 <tbody>{items.map(k => { const c = ctrl[k.id] || {}; const [tone, lab] = st(c.s); return (
-                  <tr key={k.id}><td className="ref">{k.id}</td><td>{k.q}<br /><span className="ref">{[k.eu && 'EU ' + k.eu, k.uk && 'UK ' + k.uk, k.iso && 'ISO 42001 ' + k.iso, k.nist && 'NIST ' + k.nist].filter(Boolean).join(' · ')}</span>{c.e && <><br /><span className="muted">Evidence: {c.e}</span></>}</td><td><Tag tone={tone}>{lab}</Tag></td></tr>
+                  <tr key={k.id}><td className="ref">{k.id}</td><td>{k.q}<br /><span className="ref">{[k.eu && 'EU ' + k.eu, k.uk && 'UK ' + k.uk, k.iso && 'ISO 42001 ' + k.iso, k.nist && 'NIST ' + k.nist].filter(Boolean).join(' · ')}</span>{c.e && <><br /><span className="muted">Evidence: {c.e}</span></>}</td><td><Tag tone={tone}>{lab}</Tag><Mark path={`ctrl.${k.id}`} /></td></tr>
                 ); })}</tbody></table></div>
           );
         })}
@@ -72,6 +80,18 @@ export default async function Report({ params }: { params: Promise<{ slug: strin
           <h2>Incidents</h2>
           <table><thead><tr><th>Date</th><th>Incident</th><th>Severity</th><th>Status</th></tr></thead>
             <tbody>{incidents.map(i => <tr key={i.id}><td>{i.date}</td><td>{i.title}{i.serious && <> <Tag tone="crit">Reportable</Tag></>}<br /><span className="muted">{i.category}</span></td><td>{i.severity}</td><td>{i.status}</td></tr>)}</tbody></table>
+        </>}
+        {prov.length > 0 && <>
+          <h2>Answers proposed by the assessment agent</h2>
+          <p className="muted">These answers were proposed by the Ituti assessment agent from the sources shown and accepted by the named reviewer. Answers changed by hand since then are not listed.</p>
+          <table><thead><tr><th>Field and answer</th><th>Sources</th><th style={{ width: 140 }}>Accepted</th></tr></thead>
+            <tbody>{prov.map(([path, pv]) => { const pr = byId.get(pv.p); return (
+              <tr key={path}>
+                <td><b>{fieldFor(path)?.label.split(':')[0] || path}</b><br /><span className="muted">{displayValue(path, currentValue(sys, path)).slice(0, 400)}</span></td>
+                <td>{(pr?.sources || []).map((src, i) => <div key={i} className="ref">{src.title}{src.locator && src.kind === 'document' ? `, ${src.locator}` : ''}{src.url ? ` (${src.url})` : ''}{src.quote && src.kind === 'document' ? `: “${src.quote.slice(0, 160)}”` : ''}</div>)}</td>
+                <td className="ref">{people.get(pv.u) || 'Former user'}<br />{new Date(pv.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+              </tr>
+            ); })}</tbody></table>
         </>}
         <p className="muted" style={{ marginTop: 32, fontSize: 12, borderTop: '1px solid var(--line)', paddingTop: 10 }}>Prepared with Ituti AI Assurance. Classification is an indication based on the information recorded and is not legal advice. References: Regulation (EU) 2024/1689 (AI Act), UK AI regulatory principles and sector rules, ISO/IEC 42001:2023, NIST AI RMF 1.0.</p>
       </article>

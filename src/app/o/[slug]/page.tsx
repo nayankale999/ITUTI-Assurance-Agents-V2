@@ -4,7 +4,7 @@ import { orgForPage } from '@/lib/session';
 import { TIERS, OPTS } from '@/lib/assurance';
 import { ROLE_LABEL } from '@/lib/permissions';
 import { ActionForm, Submit } from '@/components/ActionForm';
-import { createSystem, renameOrg } from '@/app/actions';
+import { createSystem, renameOrg, setOrgAi } from '@/app/actions';
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -85,6 +85,17 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
             <label className="field"><span>Client name</span><input type="text" name="name" id="org-rename" defaultValue={org.name} required minLength={2} maxLength={120} /></label>
             <Submit>Save name</Submit>
           </ActionForm>
+          {viewer.role === 'ITUTI_ADMIN' && (
+            <ActionForm action={setOrgAi} className="formrow" style={{ alignItems: 'center' }}>
+              <input type="hidden" name="orgId" value={org.id} />
+              <input type="hidden" name="on" value={org.aiEnabled ? 'false' : 'true'} />
+              <div className="field" style={{ flex: '1 1 420px' }}>
+                <span>AI assistance is <b>{org.aiEnabled ? 'on' : 'off'}</b> for this client</span>
+                <small className="muted">When on, the assessment agent and AI review send this client’s documents and assessment text to Anthropic’s API. Switch it on only once the client has agreed.</small>
+              </div>
+              <Submit className={org.aiEnabled ? 'btn' : 'btn primary'}>{org.aiEnabled ? 'Switch off' : 'Switch on'}</Submit>
+            </ActionForm>
+          )}
           {viewer.role === 'ITUTI_ADMIN' && <DeleteOrg orgId={org.id} name={org.name} />}
         </div></section>
       )}

@@ -14,6 +14,7 @@ export const assessmentSchema = z.object({
     readings: z.array(z.object({ d: str(10), v: z.number().finite() })).max(120).optional(),
   })).max(50).optional(),
   aiReview: z.object({ at: str(40), items: z.record(z.object({ v: str(20), n: str(400) })) }).optional(),
+  prov: z.record(z.object({ p: str(40), at: str(40), u: str(40), v: str(6000) })).optional(),
 }).strict();
 
 export const incidentSchema = z.object({

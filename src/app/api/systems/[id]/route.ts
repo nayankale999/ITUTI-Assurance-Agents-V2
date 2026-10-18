@@ -7,7 +7,7 @@ import { audit } from '@/lib/audit';
 import type { AssessmentData } from '@/lib/assurance';
 
 type Ctx = { params: Promise<{ id: string }> };
-const MAX_BYTES = 240_000;
+const MAX_BYTES = 600_000;
 
 export async function GET(_: Request, { params }: Ctx) {
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');

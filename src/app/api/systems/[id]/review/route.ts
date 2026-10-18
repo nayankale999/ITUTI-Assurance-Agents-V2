@@ -1,10 +1,11 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { saveSystemData } from '@/lib/systems';
 import { db } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
 import { applicable, classify, TIERS, OPTS, type AssessmentData } from '@/lib/assurance';
 import { summarise } from '@/lib/summary';
 import { audit } from '@/lib/audit';
+import { aiBlocked } from '@/lib/agent/access';
+import { llm } from '@/lib/agent/llm';
 
 type Ctx = { params: Promise<{ id: string }> };
 export const maxDuration = 120;
@@ -49,9 +50,9 @@ function parseItems(text: string) {
 export async function POST(req: Request, { params }: Ctx) {
   const bad = sameOriginJson(req); if (bad) return err(400, bad);
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
-  if (!process.env.ANTHROPIC_API_KEY) return err(503, 'AI review is not set up. Add an Anthropic API key to the server settings.');
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
+  const blocked = aiBlocked(a.org); if (blocked) return err(503, blocked);
   if (!a.canEdit) return err(403, 'You cannot run a review on this system.');
   const sys = a.system.data as AssessmentData;
   const last = sys.aiReview?.at ? Date.parse(sys.aiReview.at) : 0;
@@ -61,8 +62,7 @@ export async function POST(req: Request, { params }: Ctx) {
 
   let text = '';
   try {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const msg = await client.messages.create({
+    const msg = await llm().messages.create({
       model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
       max_tokens: 8000,
       messages: [{ role: 'user', content: prompt }],

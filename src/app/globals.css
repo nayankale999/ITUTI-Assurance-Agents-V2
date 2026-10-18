@@ -314,3 +314,37 @@ a { color: var(--violet); }
 .site-foot a { color: var(--muted); text-decoration: none; }
 .site-foot a:hover { color: var(--violet); }
 .site-foot .spacer { flex: 1; }
+
+/* Evidence and agent tab */
+.agent { display: grid; gap: 16px; }
+.agent .panel > header > div { flex: 1 1 320px; display: grid; gap: 2px; }
+.agent .banner { padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); font-size: 13px; }
+.agent .banner.err { background: var(--crit-soft); color: var(--ink); }
+.dropzone { display: grid; gap: 4px; place-items: center; text-align: center; padding: 22px 16px; border: 1.5px dashed var(--line-strong); border-radius: 10px; background: var(--sunk); cursor: pointer; }
+.dropzone.over, .dropzone:hover { border-color: var(--violet); background: var(--accent-soft); }
+.dropzone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.dropzone:focus-within { outline: 2px solid var(--violet); outline-offset: 2px; }
+.ledger.docs td small { display: block; margin-top: 2px; }
+.ledger.docs a { color: var(--heading); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.ledger.docs a:hover { text-decoration: underline; }
+.linkbtn.armed { color: var(--crit); }
+.runbox { display: grid; gap: 10px; }
+.runbox .summary { background: var(--sunk); border-radius: 8px; padding: 12px 14px; display: grid; gap: 4px; }
+.runbox .summary p { white-space: pre-wrap; }
+.runlog { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; max-height: 260px; overflow: auto; }
+.tab .count { font-size: 11px; padding: 0 7px; }
+.proposals { display: grid; gap: 12px; }
+.prop { border: 1px solid var(--line); border-left: 3px solid var(--violet); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; background: var(--surface); }
+.prop > header { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; }
+.prop h4 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.prop .val { font-size: 15px; font-weight: 600; color: var(--heading); white-space: pre-wrap; overflow-wrap: anywhere; }
+.prop .prev { font-size: 12px; }
+.prop .why { font-size: 13px; }
+.prop .srcs { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12.5px; }
+.prop .srcs a { color: var(--violet); overflow-wrap: anywhere; }
+.prop .srcs q { display: block; color: var(--muted); font-style: italic; }
+.prop .edit { display: grid; gap: 8px; }
+.prop .edit textarea, .prop .edit select { width: 100%; border: 1px solid var(--line-strong); border-radius: 6px; padding: 8px 10px; background: var(--surface); }
+.prop .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; justify-content: flex-start; }
+.agent-mark { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--violet); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; margin-left: 6px; vertical-align: middle; }
+@media (max-width: 560px) { .ledger.docs .size { display: none; } .ledger.docs td, .ledger.docs th { padding-inline: 6px; } }

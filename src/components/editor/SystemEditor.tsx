@@ -8,6 +8,7 @@ import {
   type AssessmentData, type Control, type Metric, type ProfileField,
 } from '@/lib/assurance';
 import { CARD_FIELDS, cardValue, residualText } from '@/lib/report';
+import { AgentPanel } from './AgentPanel';
 
 type Incident = { id: string; title: string; date: string; severity: string; category: string; status: string; serious: boolean; notes: string };
 type Props = {
@@ -17,9 +18,11 @@ type Props = {
   canDelete: boolean;
   incidents: Incident[];
   aiEnabled: boolean;
+  aiBlockedReason: string | null;
+  accept: string;
 };
 
-const TABS = [['profile', 'Profile'], ['classify', 'Classification'], ['controls', 'Controls'], ['report', 'Report'], ['card', 'Model card'], ['monitor', 'Monitoring']] as const;
+const TABS = [['agent', 'Evidence and agent'], ['profile', 'Profile'], ['classify', 'Classification'], ['controls', 'Controls'], ['report', 'Report'], ['card', 'Model card'], ['monitor', 'Monitoring']] as const;
 type Tab = (typeof TABS)[number][0];
 const optLabel = (k: string, v: unknown) => (OPTS[k].find(o => o[0] === v) || [, ''])[1];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -66,7 +69,9 @@ export function SystemEditor(props: Props) {
   const ro = !canEdit;
   const router = useRouter();
   const [data, setData] = useState<AssessmentData>(props.system.data);
-  const [tab, setTab] = useState<Tab>('profile');
+  const fresh = !Object.keys(props.system.data.profile || {}).some(k => k !== 'name' && k !== 'regions' && k !== 'role' && k !== 'aiType');
+  const [tab, setTab] = useState<Tab>(fresh && canEdit ? 'agent' : 'profile');
+  const [pending, setPending] = useState(0);
   const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
   const [saveMsg, setSaveMsg] = useState('');
   const [conflict, setConflict] = useState<{ data: AssessmentData; version: number } | null>(null);
@@ -82,18 +87,31 @@ export function SystemEditor(props: Props) {
   const again = useRef(false);
   latest.current = data;
 
-  const flush = useCallback(async () => {
-    if (inflight.current) { again.current = true; return; }
+  const flush = useCallback(async (): Promise<boolean> => {
+    if (inflight.current) { again.current = true; return false; }
     inflight.current = true;
     setSaveState('saving');
     const r = await api(`/api/systems/${props.system.id}`, 'PUT', { data: latest.current, version: version.current }).catch(() => null);
     inflight.current = false;
-    if (!r) { setSaveState('error'); setSaveMsg('Offline. Changes will save when you edit again.'); return; }
+    if (!r) { setSaveState('error'); setSaveMsg('Offline. Changes will save when you edit again.'); return false; }
     if (r.ok) { version.current = r.body.version; setSaveState('saved'); setSaveMsg(''); }
-    else if (r.status === 409 && r.body.current) { setConflict(r.body.current); setSaveState('error'); setSaveMsg('Not saved: a newer version exists.'); return; }
-    else { setSaveState('error'); setSaveMsg(r.body.error || 'Not saved.'); return; }
-    if (again.current) { again.current = false; flush(); }
+    else if (r.status === 409 && r.body.current) { setConflict(r.body.current); setSaveState('error'); setSaveMsg('Not saved: a newer version exists.'); return false; }
+    else { setSaveState('error'); setSaveMsg(r.body.error || 'Not saved.'); return false; }
+    if (again.current) { again.current = false; return flush(); }
+    return true;
   }, [props.system.id]);
+
+  /** Saves any pending edits so that proposals are applied on top of them. */
+  const settle = useCallback(async () => {
+    if (conflictRef.current) return false;
+    for (let i = 0; i < 50 && inflight.current; i++) await new Promise(r => setTimeout(r, 100));
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; return flush(); }
+    if (again.current) { again.current = false; return flush(); }
+    return true;
+  }, [flush]);
+  const onApplied = useCallback((d: AssessmentData, v: number) => {
+    version.current = v; latest.current = d; setData(d); setSaveState('saved'); setSaveMsg('');
+  }, []);
 
   const mutate = useCallback((fn: (d: AssessmentData) => void) => {
     if (ro) return;
@@ -167,6 +185,7 @@ export function SystemEditor(props: Props) {
   }
 
   const done: Record<Tab, boolean> = {
+    agent: false,
     profile: !!(p.name && p.affects && p.regions?.length),
     classify: cls.tier !== 'unknown',
     controls: rd.open === 0 && rd.den > 0,
@@ -210,11 +229,13 @@ export function SystemEditor(props: Props) {
       <nav className="tabs" role="tablist">
         {TABS.map(([k, l], i) => (
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => { setTab(k); window.scrollTo(0, 0); }}>
-            <span className="mono">{i + 1}</span>{l}{k !== 'report' && <span className={`dot ${done[k] ? 'done' : ''}`} />}
+            <span className="mono">{i + 1}</span>{l}{k === 'agent' ? (pending ? <span className="pill t-info count">{pending}</span> : null) : k !== 'report' && <span className={`dot ${done[k] ? 'done' : ''}`} />}
           </button>
         ))}
       </nav>
 
+      {tab === 'agent' && <AgentPanel systemId={props.system.id} canEdit={canEdit} aiEnabled={aiEnabled} blockedReason={props.aiBlockedReason} accept={props.accept}
+        version={() => version.current} beforeDecide={settle} onApplied={onApplied} onPending={setPending} />}
       {tab === 'profile' && <ProfileTab p={p} ro={ro} setProfile={setProfile} toggleProfile={toggleProfile} next={() => setTab('classify')} />}
       {tab === 'classify' && <ClassifyTab data={data} ro={ro} setCls={setCls} toggleClsObj={toggleClsObj} next={() => setTab('controls')} />}
       {tab === 'controls' && <ControlsTab data={data} ro={ro} setCtrl={setCtrl} filter={ctlFilter} setFilter={setCtlFilter} ai={ai} aiEnabled={aiEnabled} runReview={runReview} />}

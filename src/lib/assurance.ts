@@ -15,7 +15,10 @@ export type AssessmentData = {
   card?: Record<string, string>;
   metrics?: Metric[];
   aiReview?: { at: string; items: Record<string, { v: string; n: string }> };
+  /** Fields filled from an accepted agent proposal: v is the accepted value as JSON, so a later manual edit shows as no longer agent-sourced. */
+  prov?: Record<string, Prov>;
 };
+export type Prov = { p: string; at: string; u: string; v: string };
 export type Classification = { tier: string; reasons: string[]; flags: string[]; euScope: boolean; fria: boolean };
 export type Readiness = { pct: number; den: number; met: number; partial: number; gap: number; open: number };
 

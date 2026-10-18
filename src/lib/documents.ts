@@ -157,7 +157,7 @@ export async function readStoredFile(doc: DocumentRow) {
   return fs.readFile(fileFor(doc.systemId, doc.id));
 }
 
-export type Hit = { documentId: string; document: string; locator: string; text: string };
+export type Hit = { documentId: string; document: string; seq: number; locator: string; text: string };
 
 /** Full-text search over a system's documents, best matches first. Falls back to keyword matching for short or unusual terms. */
 export async function searchDocuments(systemId: string, q: string, limit = 6): Promise<Hit[]> {
@@ -165,14 +165,14 @@ export async function searchDocuments(systemId: string, q: string, limit = 6): P
   if (!terms.length) return [];
   const names = new Map((await db.documents.find({ systemId, status: 'ready' }, { columns: ['id', 'name'] })).map(d => [d.id, d.name]));
   let rows = await query<ChunkRow & { score: number }>(pool(),
-    'SELECT id, documentId, locator, text, MATCH(text) AGAINST (?) AS score FROM document_chunks WHERE systemId = ? AND MATCH(text) AGAINST (?) ORDER BY score DESC LIMIT ?',
+    'SELECT id, documentId, seq, locator, text, MATCH(text) AGAINST (?) AS score FROM document_chunks WHERE systemId = ? AND MATCH(text) AGAINST (?) ORDER BY score DESC LIMIT ?',
     [q, systemId, q, limit]);
   if (!rows.length) {
     const like = terms.slice(0, 6).map(() => 'LOWER(text) LIKE ?').join(' OR ');
-    rows = await query<ChunkRow & { score: number }>(pool(), `SELECT id, documentId, locator, text, 0 AS score FROM document_chunks WHERE systemId = ? AND (${like}) LIMIT ?`,
+    rows = await query<ChunkRow & { score: number }>(pool(), `SELECT id, documentId, seq, locator, text, 0 AS score FROM document_chunks WHERE systemId = ? AND (${like}) LIMIT ?`,
       [systemId, ...terms.slice(0, 6).map(t => `%${t}%`), limit]);
   }
-  return rows.filter(r => names.has(r.documentId)).map(r => ({ documentId: r.documentId, document: names.get(r.documentId)!, locator: r.locator, text: r.text }));
+  return rows.filter(r => names.has(r.documentId)).map(r => ({ documentId: r.documentId, document: names.get(r.documentId)!, seq: Number(r.seq), locator: r.locator, text: r.text }));
 }
 
 /** Reads consecutive chunks of one document, starting from a locator or the beginning. */
