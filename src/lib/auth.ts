@@ -1,8 +1,7 @@
 import type { NextAuthOptions } from 'next-auth';
 import EmailProvider from 'next-auth/providers/email';
-import { and, eq, gt, isNull } from 'drizzle-orm';
-import { db, schema } from '@/db';
-import { drizzleAdapter } from './auth-adapter';
+import { db } from '@/data';
+import { csvAdapter } from './auth-adapter';
 import { sendActionEmail } from './mail';
 
 const normalise = (e: string) => e.trim().toLowerCase();
@@ -13,15 +12,14 @@ export async function mayRequestSignIn(email: string) {
   const e = normalise(email);
   if (!e) return false;
   if (e === bootstrapEmail()) return true;
-  const user = await db.query.users.findFirst({ where: eq(schema.users.email, e) });
+  const user = db.users.first(u => u.email === e);
   if (user) return !user.disabled;
-  const inv = schema.invitations;
-  const invite = await db.query.invitations.findFirst({ where: and(eq(inv.email, e), isNull(inv.acceptedAt), isNull(inv.revokedAt), gt(inv.expiresAt, new Date())) });
-  return !!invite;
+  const now = Date.now();
+  return !!db.invitations.first(i => i.email === e && !i.acceptedAt && !i.revokedAt && i.expiresAt.getTime() > now);
 }
 
 export const authOptions: NextAuthOptions = {
-  adapter: drizzleAdapter(),
+  adapter: csvAdapter(),
   session: { strategy: 'database', maxAge: 60 * 60 * 24 * 14 },
   pages: { signIn: '/login', verifyRequest: '/login/check-email', error: '/login' },
   providers: [
@@ -44,7 +42,7 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, email }) {
       const address = normalise(user.email || '');
       if (email?.verificationRequest) return mayRequestSignIn(address);
-      const existing = await db.query.users.findFirst({ where: eq(schema.users.email, address) });
+      const existing = db.users.first(u => u.email === address);
       if (existing?.disabled) return false;
       return true;
     },
@@ -60,7 +58,7 @@ export const authOptions: NextAuthOptions = {
   events: {
     async createUser({ user }) {
       if (user.email && normalise(user.email) === bootstrapEmail()) {
-        await db.update(schema.users).set({ role: 'ITUTI_ADMIN' }).where(eq(schema.users.id, user.id));
+        await db.users.update(u => u.id === user.id, { role: 'ITUTI_ADMIN' });
       }
     },
   },

@@ -1,18 +1,25 @@
-/* End-to-end checks against a running build and a disposable database.
-   Usage: DATABASE_URL=... NEXTAUTH_URL=http://localhost:3100 NEXTAUTH_SECRET=... BOOTSTRAP_ADMIN_EMAIL=... npm run test:e2e
-   Starts `next start` itself, creates test data with fixed prefixes, and removes it afterwards. */
+/* End-to-end checks against the production build.
+   Usage: npm run build && npm run test:e2e
+   Uses a fresh temporary data folder, so it never touches real data. Starts `next start` itself on port 3100. */
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
-import { Pool } from 'pg';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq, like, inArray } from 'drizzle-orm';
-import * as schema from '../src/db/schema';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'assurance-e2e-'));
+process.env.DATA_DIR = DATA;
+process.env.NEXTAUTH_URL = process.env.E2E_URL || 'http://localhost:3100';
+process.env.NEXTAUTH_SECRET ||= 'e2e-secret-' + randomBytes(16).toString('hex');
+process.env.BOOTSTRAP_ADMIN_EMAIL = 'boss@itutitech.test';
+process.env.SMTP_HOST = '';
+process.env.ANTHROPIC_API_KEY = '';
+
+import { db } from '../src/data';
 import { hashToken } from '../src/lib/tokens';
 
 const BASE = process.env.NEXTAUTH_URL || 'http://localhost:3100';
 const PORT = new URL(BASE).port || '3100';
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const db = drizzle(pool, { schema });
 const results: [string, boolean, string?][] = [];
 const check = (name: string, ok: boolean, detail?: string) => { results.push([name, ok, detail]); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${!ok && detail ? ` (${detail})` : ''}`); };
 const logs: string[] = [];
@@ -30,7 +37,7 @@ async function startServer() {
 
 async function sessionFor(userId: string) {
   const token = randomBytes(24).toString('hex');
-  await db.insert(schema.sessions).values({ sessionToken: token, userId, expires: new Date(Date.now() + 3600e3) });
+  await db.sessions.insert({ sessionToken: token, userId, expires: new Date(Date.now() + 3600e3) });
   return `next-auth.session-token=${token}`;
 }
 
@@ -43,7 +50,7 @@ async function main() {
   const tag = 'e2e' + Date.now().toString(36);
   try {
     // ---------- Fixtures ----------
-    const mk = async (email: string, role: 'ITUTI_ADMIN' | 'ITUTI_ASSESSOR' | 'CLIENT') => (await db.insert(schema.users).values({ email: `${tag}-${email}`, role }).returning())[0];
+    const mk = (email: string, role: 'ITUTI_ADMIN' | 'ITUTI_ASSESSOR' | 'CLIENT') => db.users.insert({ email: `${tag}-${email}`, role });
     const admin = await mk('admin@itutitech.com', 'ITUTI_ADMIN');
     const assessorIn = await mk('assessor-in@itutitech.com', 'ITUTI_ASSESSOR');
     const assessorOut = await mk('assessor-out@itutitech.com', 'ITUTI_ASSESSOR');
@@ -51,19 +58,19 @@ async function main() {
     const contrib = await mk('contrib@bank.test', 'CLIENT');
     const viewer = await mk('viewer@bank.test', 'CLIENT');
     const otherClient = await mk('other@insurer.test', 'CLIENT');
-    const [orgA] = await db.insert(schema.organizations).values({ name: `${tag} Bank`, slug: `${tag}-bank` }).returning();
-    const [orgB] = await db.insert(schema.organizations).values({ name: `${tag} Insurer`, slug: `${tag}-insurer` }).returning();
-    await db.insert(schema.memberships).values([
+    const orgA = await db.organizations.insert({ name: `${tag} Bank`, slug: `${tag}-bank` });
+    const orgB = await db.organizations.insert({ name: `${tag} Insurer`, slug: `${tag}-insurer` });
+    await db.memberships.insertMany([
       { userId: clientAdmin.id, orgId: orgA.id, role: 'CLIENT_ADMIN' },
       { userId: contrib.id, orgId: orgA.id, role: 'CONTRIBUTOR' },
       { userId: viewer.id, orgId: orgA.id, role: 'VIEWER' },
       { userId: otherClient.id, orgId: orgB.id, role: 'CLIENT_ADMIN' },
     ]);
-    await db.insert(schema.assessorAssignments).values({ userId: assessorIn.id, orgId: orgA.id });
+    await db.assessorAssignments.insert({ userId: assessorIn.id, orgId: orgA.id });
     const blank = { profile: { name: 'Loan scoring', regions: ['eu'], role: ['deployer'], aiType: [] }, cls: { a3: {}, t: {} }, ctrl: {}, card: {}, metrics: [] };
-    const [s1] = await db.insert(schema.aiSystems).values({ orgId: orgA.id, name: 'Loan scoring', data: blank }).returning();
-    const [s2] = await db.insert(schema.aiSystems).values({ orgId: orgA.id, name: 'Chatbot', data: { ...blank, profile: { ...blank.profile, name: 'Chatbot' } } }).returning();
-    await db.insert(schema.systemAssignments).values({ userId: contrib.id, systemId: s1.id });
+    const s1 = await db.aiSystems.insert({ orgId: orgA.id, name: 'Loan scoring', data: blank });
+    const s2 = await db.aiSystems.insert({ orgId: orgA.id, name: 'Chatbot', data: { ...blank, profile: { ...blank.profile, name: 'Chatbot' } } });
+    await db.systemAssignments.insert({ userId: contrib.id, systemId: s1.id });
 
     const c = {
       admin: await sessionFor(admin.id), assessorIn: await sessionFor(assessorIn.id), assessorOut: await sessionFor(assessorOut.id),
@@ -93,7 +100,7 @@ async function main() {
     check('contributor cannot save an unassigned system', (await send(`/api/systems/${s2.id}`, 'PUT', c.contrib, { data: edited, version: 1 })).status === 403);
     const save = await send(`/api/systems/${s1.id}`, 'PUT', c.contrib, { data: edited, version: 1 });
     check('contributor saves an assigned system', save.status === 200, String(save.status));
-    const row = await db.query.aiSystems.findFirst({ where: eq(schema.aiSystems.id, s1.id) });
+    const row = db.aiSystems.first(r => r.id === s1.id);
     check('server recomputes tier, risk and readiness', row?.tier === 'high' && row.riskScore !== null && row.readiness > 0 && row.version === 2, JSON.stringify({ tier: row?.tier, risk: row?.riskScore, ready: row?.readiness, v: row?.version }));
     const stale = await send(`/api/systems/${s1.id}`, 'PUT', c.clientAdmin, { data: blank, version: 1 });
     check('a stale save is refused with 409', stale.status === 409);
@@ -107,7 +114,7 @@ async function main() {
     const ir = await send(`/api/systems/${s1.id}/incidents`, 'POST', c.contrib, inc);
     const irBody = await ir.json();
     check('contributor records an incident', ir.status === 201 && irBody.open === 1);
-    check('incident count is stored on the system', (await db.query.aiSystems.findFirst({ where: eq(schema.aiSystems.id, s1.id) }))?.openIncidents === 1);
+    check('incident count is stored on the system', db.aiSystems.first(r => r.id === s1.id)?.openIncidents === 1);
     const csv = await get(`/api/systems/${s1.id}/incidents?format=csv`, c.viewer);
     check('viewer exports incidents as CSV', csv.status === 200 && (await csv.text()).includes('Approval ratio'));
     const close = await send(`/api/incidents/${irBody.incident.id}`, 'PATCH', c.assessorIn, { status: 'closed' });
@@ -141,21 +148,28 @@ async function main() {
       if (sessionCookie) check('the new session opens the client', (await get(`/o/${orgA.slug}`, sessionCookie.split(';')[0])).status === 200);
     }
     const token = 'tok' + randomBytes(16).toString('hex');
-    await db.insert(schema.invitations).values({ email: `${tag}-newhire@bank.test`, orgId: orgA.id, role: 'VIEWER', tokenHash: hashToken(token), invitedById: clientAdmin.id, expiresAt: new Date(Date.now() + 864e5) });
+    await db.invitations.insert({ email: `${tag}-newhire@bank.test`, orgId: orgA.id, role: 'VIEWER', tokenHash: hashToken(token), invitedById: clientAdmin.id, expiresAt: new Date(Date.now() + 864e5) });
     const invitee = await signInRequest(`${tag}-newhire@bank.test`, `/invite/${token}`);
     check('invited person gets a sign-in link', !!invitee.url);
     const invPage = await get(`/invite/${token}`);
     check('invitation page loads for a signed-out visitor', invPage.status === 200 && (await invPage.text()).includes('Sign in to accept'));
+    const boss = await signInRequest('boss@itutitech.test');
+    check('bootstrap admin email gets a sign-in link', !!boss.url);
+    if (boss.url) {
+      await fetch(boss.url, { redirect: 'manual' });
+      check('bootstrap admin becomes an Ituti admin on first sign-in', db.users.first(u => u.email === 'boss@itutitech.test')?.role === 'ITUTI_ADMIN');
+    }
+    const csvText = fs.readFileSync(path.join(DATA, 'ai_systems.csv'), 'utf8');
+    check('saved assessment is in ai_systems.csv', csvText.includes('Policy v2') && csvText.startsWith('\ufeffid,orgId,name'));
+    check('deleting a system removes its incidents and assignments', !db.incidents.first(i => i.systemId === s2.id) && !db.systemAssignments.first(a => a.systemId === s2.id) && !db.aiSystems.first(r => r.id === s2.id));
+    check('no lock or temporary files left behind', fs.readdirSync(DATA).every(f => !f.endsWith('.lock') && !f.endsWith('.tmp')));
     check('disabled account gets no sign-in link', await (async () => {
-      await db.update(schema.users).set({ disabled: true }).where(eq(schema.users.id, viewer.id));
+      await db.users.update(u => u.id === viewer.id, { disabled: true });
       return !(await signInRequest(viewer.email)).url;
     })());
   } finally {
     try { process.kill(-server.pid!, 'SIGTERM'); } catch { server.kill('SIGTERM'); }
-    const users = await db.query.users.findMany({ where: like(schema.users.email, `${tag}-%`), columns: { id: true } });
-    if (users.length) await db.delete(schema.users).where(inArray(schema.users.id, users.map(u => u.id)));
-    await db.delete(schema.organizations).where(like(schema.organizations.slug, `${tag}-%`));
-    await pool.end();
+    fs.rmSync(DATA, { recursive: true, force: true });
   }
   const failed = results.filter(r => !r[1]);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

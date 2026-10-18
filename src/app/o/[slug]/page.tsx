@@ -1,6 +1,5 @@
 import Link from 'next/link';
-import { and, desc, eq, inArray } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { orgForPage } from '@/lib/session';
 import { TIERS, OPTS } from '@/lib/assurance';
 import { ROLE_LABEL } from '@/lib/permissions';
@@ -9,7 +8,7 @@ import { createSystem, renameOrg } from '@/app/actions';
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const org = await db.query.organizations.findFirst({ where: eq(schema.organizations.slug, slug) });
+  const org = db.organizations.first(o => o.slug === slug);
   return { title: org?.name || 'Client' };
 }
 
@@ -20,9 +19,9 @@ const riskTone = (s: number) => s >= 75 ? 'crit' : s >= 50 ? 'warn' : s >= 25 ? 
 export default async function Portfolio({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { viewer, org, caps } = await orgForPage(slug);
-  const systems = await db.query.aiSystems.findMany({ where: eq(schema.aiSystems.orgId, org.id), orderBy: desc(schema.aiSystems.updatedAt) });
-  const editable = caps.orgRole === 'CONTRIBUTOR' && systems.length
-    ? new Set((await db.query.systemAssignments.findMany({ where: and(eq(schema.systemAssignments.userId, viewer.id), inArray(schema.systemAssignments.systemId, systems.map(s => s.id))) })).map(a => a.systemId))
+  const systems = db.aiSystems.find(s => s.orgId === org.id).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  const editable = caps.orgRole === 'CONTRIBUTOR'
+    ? new Set(db.systemAssignments.find(a => a.userId === viewer.id).map(a => a.systemId))
     : null;
   const groups = new Map<string, typeof systems>();
   for (const s of systems) {

@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation';
-import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { orgForPage } from '@/lib/session';
 import { ROLE_LABEL } from '@/lib/permissions';
 import { ActionForm, Submit } from '@/components/ActionForm';
@@ -12,19 +11,16 @@ export default async function People({ params }: { params: Promise<{ slug: strin
   const { slug } = await params;
   const { viewer, org, caps } = await orgForPage(slug);
   if (!caps.manage) notFound();
-  const members = await db.select({ userId: schema.memberships.userId, role: schema.memberships.role, email: schema.users.email, name: schema.users.name, disabled: schema.users.disabled })
-    .from(schema.memberships).innerJoin(schema.users, eq(schema.users.id, schema.memberships.userId))
-    .where(eq(schema.memberships.orgId, org.id)).orderBy(asc(schema.users.email));
-  const assessors = await db.select({ email: schema.users.email, name: schema.users.name })
-    .from(schema.assessorAssignments).innerJoin(schema.users, eq(schema.users.id, schema.assessorAssignments.userId))
-    .where(eq(schema.assessorAssignments.orgId, org.id));
-  const systems = await db.query.aiSystems.findMany({ where: eq(schema.aiSystems.orgId, org.id), columns: { id: true, name: true }, orderBy: asc(schema.aiSystems.name) });
-  const contributorIds = members.filter(m => m.role === 'CONTRIBUTOR').map(m => m.userId);
-  const assigned = contributorIds.length && systems.length
-    ? await db.query.systemAssignments.findMany({ where: and(inArray(schema.systemAssignments.userId, contributorIds), inArray(schema.systemAssignments.systemId, systems.map(s => s.id))) })
-    : [];
-  const inv = schema.invitations;
-  const pending = await db.query.invitations.findMany({ where: and(eq(inv.orgId, org.id), isNull(inv.acceptedAt), isNull(inv.revokedAt), gt(inv.expiresAt, new Date())), orderBy: asc(inv.createdAt) });
+  const users = new Map(db.users.all().map(u => [u.id, u]));
+  const members = db.memberships.find(m => m.orgId === org.id)
+    .flatMap(m => { const u = users.get(m.userId); return u ? [{ userId: m.userId, role: m.role, email: u.email, name: u.name, disabled: u.disabled }] : []; })
+    .sort((a, b) => a.email.localeCompare(b.email));
+  const assessors = db.assessorAssignments.find(a => a.orgId === org.id).flatMap(a => { const u = users.get(a.userId); return u ? [{ email: u.email, name: u.name }] : []; });
+  const systems = db.aiSystems.find(s => s.orgId === org.id).map(s => ({ id: s.id, name: s.name })).sort((a, b) => a.name.localeCompare(b.name));
+  const systemIds = new Set(systems.map(s => s.id));
+  const assigned = db.systemAssignments.find(a => systemIds.has(a.systemId));
+  const now = Date.now();
+  const pending = db.invitations.find(i => i.orgId === org.id && !i.acceptedAt && !i.revokedAt && i.expiresAt.getTime() > now).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
   return (
     <>

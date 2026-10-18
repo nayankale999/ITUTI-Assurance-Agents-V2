@@ -1,6 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { and, eq, sql } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
 import { applicable, classify, TIERS, OPTS, type AssessmentData } from '@/lib/assurance';
 import { summarise } from '@/lib/summary';
@@ -75,19 +74,17 @@ export async function POST(req: Request, { params }: Ctx) {
   const items = parseItems(text);
   if (!items) return err(502, 'The review came back in an unexpected format. Try again.');
 
-  // Merge the review into the latest saved record without overwriting concurrent edits
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const cur = await db.query.aiSystems.findFirst({ where: eq(schema.aiSystems.id, id) });
-    if (!cur) return err(404, 'Not found.');
-    const data = { ...(cur.data as AssessmentData), aiReview: { at: new Date().toISOString(), items } };
-    const [row] = await db.update(schema.aiSystems)
-      .set({ data, ...summarise(data), version: sql`${schema.aiSystems.version} + 1`, updatedById: v.id, updatedAt: new Date() })
-      .where(and(eq(schema.aiSystems.id, id), eq(schema.aiSystems.version, cur.version)))
-      .returning({ version: schema.aiSystems.version });
-    if (row) {
-      await audit({ orgId: a.system.orgId, systemId: id, userId: v.id, action: 'review.run', detail: { controls: count } });
-      return json({ aiReview: data.aiReview, version: row.version });
-    }
-  }
-  return err(409, 'The record kept changing during the review. Try again.');
+  // Merge the review into the latest saved record, keeping any edits made while it ran
+  const aiReview = { at: new Date().toISOString(), items };
+  const saved = await db.aiSystems.mutate(rows => {
+    const i = rows.findIndex(r => r.id === id);
+    if (i < 0) return { rows: null, result: null };
+    const data = { ...(rows[i].data as AssessmentData), aiReview };
+    const out = [...rows];
+    out[i] = { ...rows[i], data, ...summarise(data), version: rows[i].version + 1, updatedById: v.id, updatedAt: new Date() };
+    return { rows: out, result: out[i] };
+  });
+  if (!saved) return err(404, 'Not found.');
+  await audit({ orgId: a.system.orgId, systemId: id, userId: v.id, action: 'review.run', detail: { controls: count } });
+  return json({ aiReview, version: saved.version });
 }

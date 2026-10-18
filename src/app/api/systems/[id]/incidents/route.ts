@@ -1,5 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson, refreshIncidentCount } from '@/lib/api';
 import { incidentSchema } from '@/lib/validate';
 import { audit } from '@/lib/audit';
@@ -10,7 +9,7 @@ export async function GET(req: Request, { params }: Ctx) {
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
-  const rows = await db.query.incidents.findMany({ where: eq(schema.incidents.systemId, id), orderBy: desc(schema.incidents.date) });
+  const rows = db.incidents.find(i => i.systemId === id).sort((a, b) => b.date.localeCompare(a.date));
   if (new URL(req.url).searchParams.get('format') === 'csv') {
     const q = (x: unknown) => `"${String(x ?? '').replace(/"/g, '""')}"`;
     const csv = [['Date', 'Incident', 'Severity', 'Category', 'Status', 'Reportable', 'Details'].map(q).join(','),
@@ -29,7 +28,7 @@ export async function POST(req: Request, { params }: Ctx) {
   if (!a.canEdit) return err(403, 'You cannot record incidents for this system.');
   const parsed = incidentSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return err(400, 'Check the incident details.');
-  const [row] = await db.insert(schema.incidents).values({ ...parsed.data, systemId: id, createdById: v.id }).returning();
+  const row = await db.incidents.insert({ ...parsed.data, systemId: id, createdById: v.id });
   const open = await refreshIncidentCount(id);
   await audit({ orgId: a.system.orgId, systemId: id, userId: v.id, action: 'incident.created', detail: { title: row.title, severity: row.severity } });
   return json({ incident: row, open }, 201);

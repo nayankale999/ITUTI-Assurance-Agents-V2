@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { eq, and, ne } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { getViewer, systemAccess, type Viewer } from './session';
 
 export const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -26,7 +25,7 @@ export async function loadSystem(viewer: Viewer, id: string) {
 
 /** Recomputes the open-incident count for a system. */
 export async function refreshIncidentCount(systemId: string) {
-  const open = await db.query.incidents.findMany({ where: and(eq(schema.incidents.systemId, systemId), ne(schema.incidents.status, 'closed')), columns: { id: true } });
-  await db.update(schema.aiSystems).set({ openIncidents: open.length }).where(eq(schema.aiSystems.id, systemId));
-  return open.length;
+  const open = db.incidents.find(i => i.systemId === systemId && i.status !== 'closed').length;
+  await db.aiSystems.update(s => s.id === systemId && s.openIncidents !== open, { openIncidents: open });
+  return open;
 }

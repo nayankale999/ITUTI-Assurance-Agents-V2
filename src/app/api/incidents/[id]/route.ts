@@ -1,5 +1,4 @@
-import { eq } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson, refreshIncidentCount } from '@/lib/api';
 import { incidentPatchSchema } from '@/lib/validate';
 import { audit } from '@/lib/audit';
@@ -9,7 +8,7 @@ type Ctx = { params: Promise<{ id: string }> };
 async function load(req: Request, id: string) {
   const bad = sameOriginJson(req); if (bad) return { error: err(400, bad) };
   const v = await apiViewer(); if (!v) return { error: err(401, 'Sign in again.') };
-  const inc = await db.query.incidents.findFirst({ where: eq(schema.incidents.id, id) });
+  const inc = db.incidents.first(i => i.id === id);
   if (!inc) return { error: err(404, 'Not found.') };
   const a = await loadSystem(v, inc.systemId);
   if (!a) return { error: err(404, 'Not found.') };
@@ -22,7 +21,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const r = await load(req, id); if ('error' in r) return r.error;
   const parsed = incidentPatchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return err(400, 'Invalid status.');
-  await db.update(schema.incidents).set({ status: parsed.data.status, updatedAt: new Date() }).where(eq(schema.incidents.id, id));
+  await db.incidents.update(i => i.id === id, { status: parsed.data.status, updatedAt: new Date() });
   const open = await refreshIncidentCount(r.inc.systemId);
   await audit({ orgId: r.a.system.orgId, systemId: r.inc.systemId, userId: r.v.id, action: 'incident.updated', detail: { title: r.inc.title, status: parsed.data.status } });
   return json({ ok: true, open });
@@ -31,7 +30,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 export async function DELETE(req: Request, { params }: Ctx) {
   const { id } = await params;
   const r = await load(req, id); if ('error' in r) return r.error;
-  await db.delete(schema.incidents).where(eq(schema.incidents.id, id));
+  await db.incidents.remove(i => i.id === id);
   const open = await refreshIncidentCount(r.inc.systemId);
   await audit({ orgId: r.a.system.orgId, systemId: r.inc.systemId, userId: r.v.id, action: 'incident.deleted', detail: { title: r.inc.title } });
   return json({ ok: true, open });

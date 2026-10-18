@@ -1,6 +1,5 @@
 import Link from 'next/link';
-import { eq } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { getViewer } from '@/lib/session';
 import { hashToken } from '@/lib/tokens';
 import { ROLE_LABEL } from '@/lib/permissions';
@@ -12,9 +11,10 @@ export const metadata = { title: 'Invitation' };
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const invite = await db.query.invitations.findFirst({ where: eq(schema.invitations.tokenHash, hashToken(token)) });
+  const hash = hashToken(token);
+  const invite = db.invitations.first(i => i.tokenHash === hash);
   const valid = invite && !invite.revokedAt && !invite.acceptedAt && invite.expiresAt > new Date();
-  const org = invite?.orgId ? await db.query.organizations.findFirst({ where: eq(schema.organizations.id, invite.orgId) }) : null;
+  const org = invite?.orgId ? db.organizations.first(o => o.id === invite.orgId) ?? null : null;
   const viewer = await getViewer();
   const where = org ? org.name : 'the Ituti team';
   return (

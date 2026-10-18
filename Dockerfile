@@ -12,24 +12,16 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# ---- production dependencies only ----
-FROM node:22-bookworm-slim AS prod-deps
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
-
 # ---- runtime ----
 FROM node:22-bookworm-slim AS run
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
-RUN groupadd -r app && useradd -r -g app app
-COPY --from=prod-deps /app/node_modules ./node_modules
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 DATA_DIR=/app/data
+RUN groupadd -r -g 10001 app && useradd -r -u 10001 -g app app && mkdir -p /app/data && chown app:app /app/data
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
-COPY drizzle ./drizzle
-COPY scripts/migrate.mjs scripts/seed.mjs ./scripts/
 USER app
+# The CSV files live here. Mount a persistent volume on this path.
+VOLUME ["/app/data"]
 EXPOSE 3000
-# Apply any pending migrations, then start the server
-CMD ["sh", "-c", "node scripts/migrate.mjs && node server.js"]
+CMD ["node", "server.js"]

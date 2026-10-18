@@ -1,5 +1,4 @@
-import { and, asc, eq, inArray, isNull, gt } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { requireItutiAdmin } from '@/lib/session';
 import { TopBar } from '@/components/TopBar';
 import { ActionForm, Submit } from '@/components/ActionForm';
@@ -10,11 +9,12 @@ export const metadata = { title: 'Ituti team' };
 
 export default async function TeamPage() {
   const viewer = await requireItutiAdmin();
-  const staff = await db.query.users.findMany({ where: inArray(schema.users.role, ['ITUTI_ADMIN', 'ITUTI_ASSESSOR']), orderBy: asc(schema.users.email) });
-  const orgs = await db.query.organizations.findMany({ orderBy: asc(schema.organizations.name) });
-  const assigns = staff.length ? await db.query.assessorAssignments.findMany({ where: inArray(schema.assessorAssignments.userId, staff.map(s => s.id)) }) : [];
-  const inv = schema.invitations;
-  const pending = await db.query.invitations.findMany({ where: and(isNull(inv.orgId), isNull(inv.acceptedAt), isNull(inv.revokedAt), gt(inv.expiresAt, new Date())), orderBy: asc(inv.createdAt) });
+  const staff = db.users.find(u => u.role === 'ITUTI_ADMIN' || u.role === 'ITUTI_ASSESSOR').sort((a, b) => a.email.localeCompare(b.email));
+  const orgs = [...db.organizations.all()].sort((a, b) => a.name.localeCompare(b.name));
+  const staffIds = new Set(staff.map(s => s.id));
+  const assigns = db.assessorAssignments.find(a => staffIds.has(a.userId));
+  const now = Date.now();
+  const pending = db.invitations.find(i => !i.orgId && !i.acceptedAt && !i.revokedAt && i.expiresAt.getTime() > now).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   return (
     <>
       <TopBar viewer={viewer} current="team" />

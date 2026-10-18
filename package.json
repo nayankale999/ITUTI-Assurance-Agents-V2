@@ -8,21 +8,17 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "node scripts/migrate.mjs",
-    "db:seed": "node scripts/seed.mjs",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "tsx scripts/e2e.ts",
-    "db:demo": "tsx scripts/demo.ts",
-    "db:local": "tsx scripts/dev-db.ts"
+    "data:demo": "tsx scripts/demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",
-    "drizzle-orm": "0.45.3",
+    "csv-parse": "7.0.3",
+    "csv-stringify": "6.9.0",
     "next": "15.5.27",
     "next-auth": "4.24.15",
     "nodemailer": "7.0.13",
-    "pg": "8.23.1",
     "react": "19.1.9",
     "react-dom": "19.1.9",
     "zod": "3.25.76"
@@ -30,11 +26,8 @@
   "devDependencies": {
     "@types/node": "22.18.0",
     "@types/nodemailer": "6.4.17",
-    "@types/pg": "8.23.1",
     "@types/react": "19.1.9",
     "@types/react-dom": "19.1.7",
-    "drizzle-kit": "0.31.11",
-    "embedded-postgres": "18.4.0-beta.17",
     "tsx": "4.20.5",
     "typescript": "5.9.3"
   },

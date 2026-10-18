@@ -1,13 +1,12 @@
 import { notFound } from 'next/navigation';
-import { desc, eq } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { requireViewer, systemAccess } from '@/lib/session';
 import { SystemEditor } from '@/components/editor/SystemEditor';
 import type { AssessmentData } from '@/lib/assurance';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const s = await db.query.aiSystems.findFirst({ where: eq(schema.aiSystems.id, id), columns: { name: true } });
+  const s = db.aiSystems.first(r => r.id === id);
   return { title: s?.name || 'AI system' };
 }
 
@@ -16,7 +15,7 @@ export default async function SystemPage({ params }: { params: Promise<{ slug: s
   const viewer = await requireViewer();
   const a = await systemAccess(viewer, id);
   if (!a || a.org.slug !== slug) notFound();
-  const incidents = await db.query.incidents.findMany({ where: eq(schema.incidents.systemId, id), orderBy: desc(schema.incidents.date) });
+  const incidents = db.incidents.find(i => i.systemId === id).sort((a, b) => b.date.localeCompare(a.date));
   return (
     <SystemEditor
       key={a.system.id}

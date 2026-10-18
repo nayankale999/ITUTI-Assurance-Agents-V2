@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { sql, inArray } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { requireViewer, visibleOrgs } from '@/lib/session';
 import { TopBar } from '@/components/TopBar';
 import { ActionForm, Submit } from '@/components/ActionForm';
@@ -13,18 +12,19 @@ export default async function AdminHome() {
   const viewer = await requireViewer();
   if (viewer.role === 'CLIENT') notFound();
   const orgs = await visibleOrgs(viewer);
-  const ids = orgs.map(o => o.id);
-  const stats = ids.length ? await db.select({
-    orgId: schema.aiSystems.orgId,
-    systems: sql<number>`count(*)::int`,
-    high: sql<number>`count(*) filter (where ${schema.aiSystems.tier} = 'high')::int`,
-    flagged: sql<number>`count(*) filter (where ${schema.aiSystems.tier} in ('prohibited','review'))::int`,
-    readiness: sql<number>`coalesce(round(avg(${schema.aiSystems.readiness})),0)::int`,
-    incidents: sql<number>`coalesce(sum(${schema.aiSystems.openIncidents}),0)::int`,
-  }).from(schema.aiSystems).where(inArray(schema.aiSystems.orgId, ids)).groupBy(schema.aiSystems.orgId) : [];
-  const members = ids.length ? await db.select({ orgId: schema.memberships.orgId, n: sql<number>`count(*)::int` }).from(schema.memberships).where(inArray(schema.memberships.orgId, ids)).groupBy(schema.memberships.orgId) : [];
-  const by = new Map(stats.map(s => [s.orgId, s]));
-  const mby = new Map(members.map(m => [m.orgId, m.n]));
+  const ids = new Set(orgs.map(o => o.id));
+  const by = new Map<string, { orgId: string; systems: number; high: number; flagged: number; readiness: number; incidents: number }>();
+  for (const s of db.aiSystems.find(s => ids.has(s.orgId))) {
+    const e = by.get(s.orgId) || { orgId: s.orgId, systems: 0, high: 0, flagged: 0, readiness: 0, incidents: 0 };
+    e.systems++; e.readiness += s.readiness; e.incidents += s.openIncidents;
+    if (s.tier === 'high') e.high++;
+    if (s.tier === 'prohibited' || s.tier === 'review') e.flagged++;
+    by.set(s.orgId, e);
+  }
+  for (const e of by.values()) e.readiness = Math.round(e.readiness / e.systems);
+  const stats = [...by.values()];
+  const mby = new Map<string, number>();
+  for (const m of db.memberships.find(m => ids.has(m.orgId))) mby.set(m.orgId, (mby.get(m.orgId) || 0) + 1);
   const totals = stats.reduce((a, s) => ({ systems: a.systems + s.systems, high: a.high + s.high, flagged: a.flagged + s.flagged, incidents: a.incidents + s.incidents }), { systems: 0, high: 0, flagged: 0, incidents: 0 });
   return (
     <>

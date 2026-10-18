@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { desc, eq } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { requireViewer, systemAccess } from '@/lib/session';
 import { PROFILE_SECTIONS, OPTS, AREAS, TIERS, classify, obligations, applicable, inherentRisk, readiness, frameworkCoverage, metricStatus, type AssessmentData } from '@/lib/assurance';
 import { residualText } from '@/lib/report';
@@ -18,7 +17,7 @@ export default async function Report({ params }: { params: Promise<{ slug: strin
   if (!a || a.org.slug !== slug) notFound();
   const sys = a.system.data as AssessmentData;
   const p = sys.profile || {}, r = classify(sys), ir = inherentRisk(sys), rd = readiness(sys), list = applicable(sys), ctrl = sys.ctrl || {};
-  const incidents = await db.query.incidents.findMany({ where: eq(schema.incidents.systemId, id), orderBy: desc(schema.incidents.date) });
+  const incidents = db.incidents.find(i => i.systemId === id).sort((a, b) => b.date.localeCompare(a.date));
   const st = (s?: string) => ({ met: ['good', 'Met'], partial: ['warn', 'Partial'], gap: ['crit', 'Not met'], na: ['muted', 'N/A'] } as Record<string, string[]>)[s || ''] || ['muted', 'Open'];
   const tier = TIERS[r.tier] || TIERS.unknown;
   return (

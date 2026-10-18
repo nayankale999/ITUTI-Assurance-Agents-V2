@@ -1,8 +1,6 @@
-/* Adds a clearly labelled example client with one completed system, for demos and training. */
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { eq } from 'drizzle-orm';
-import { Pool } from 'pg';
-import * as schema from '../src/db/schema';
+/* Adds a clearly labelled example client with one completed system, for demos and training.
+   Usage: npm run data:demo   (uses DATA_DIR, default ./data) */
+import { db } from '../src/data';
 import { summarise } from '../src/lib/summary';
 import type { AssessmentData } from '../src/lib/assurance';
 
@@ -33,14 +31,10 @@ const data: AssessmentData = {
 };
 
 async function main() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  const db = drizzle(pool, { schema });
   const slug = 'example-bank';
-  let org = await db.query.organizations.findFirst({ where: eq(schema.organizations.slug, slug) });
-  if (!org) [org] = await db.insert(schema.organizations).values({ name: 'Example Bank plc (demo)', slug }).returning();
-  const [sys] = await db.insert(schema.aiSystems).values({ orgId: org.id, data, ...summarise(data), openIncidents: 1 }).returning();
-  await db.insert(schema.incidents).values({ systemId: sys.id, title: 'Fairness ratio for applicants aged 18–25 fell below 0.8', date: '2026-09-03', severity: 'high', category: 'Bias or discrimination', status: 'investigating', notes: 'Investigating feature drift in months-at-address.' });
+  const org = db.organizations.first(o => o.slug === slug) ?? await db.organizations.insert({ name: 'Example Bank plc (demo)', slug });
+  const sys = await db.aiSystems.insert({ orgId: org.id, data, ...summarise(data), openIncidents: 1 });
+  await db.incidents.insert({ systemId: sys.id, title: 'Fairness ratio for applicants aged 18–25 fell below 0.8', date: '2026-09-03', severity: 'high', category: 'Bias or discrimination', status: 'investigating', notes: 'Investigating feature drift in months-at-address.' });
   console.log(`Demo client ready at /o/${slug}`);
-  await pool.end();
 }
 main().catch(e => { console.error(e); process.exit(1); });

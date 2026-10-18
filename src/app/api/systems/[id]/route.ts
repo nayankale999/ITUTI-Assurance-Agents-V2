@@ -1,5 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db, deleteSystems, type AiSystemRow } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
 import { assessmentSchema } from '@/lib/validate';
 import { summarise } from '@/lib/summary';
@@ -33,14 +32,19 @@ export async function PUT(req: Request, { params }: Ctx) {
   const data = parsed.data as AssessmentData;
   const prev = a.system.data as Record<string, unknown>;
   const sections = Object.keys({ ...prev, ...data }).filter(k => JSON.stringify(prev[k]) !== JSON.stringify((data as Record<string, unknown>)[k]));
-  const [row] = await db.update(schema.aiSystems)
-    .set({ data, ...summarise(data), version: sql`${schema.aiSystems.version} + 1`, updatedById: v.id, updatedAt: new Date() })
-    .where(and(eq(schema.aiSystems.id, id), eq(schema.aiSystems.version, version)))
-    .returning({ version: schema.aiSystems.version, updatedAt: schema.aiSystems.updatedAt });
-  if (!row) {
-    const cur = await db.query.aiSystems.findFirst({ where: eq(schema.aiSystems.id, id) });
-    return json({ error: 'Someone else saved a newer version of this system.', current: cur ? { data: cur.data, version: cur.version } : null }, 409);
-  }
+  // Saves only if nobody else has saved since this editor loaded the record
+  type Outcome = { gone: true } | { conflict: AiSystemRow } | { saved: AiSystemRow };
+  const outcome = await db.aiSystems.mutate<Outcome>(rows => {
+    const i = rows.findIndex(r => r.id === id);
+    if (i < 0) return { rows: null, result: { gone: true } };
+    if (rows[i].version !== version) return { rows: null, result: { conflict: rows[i] } };
+    const out = [...rows];
+    out[i] = { ...rows[i], data, ...summarise(data), version: rows[i].version + 1, updatedById: v.id, updatedAt: new Date() };
+    return { rows: out, result: { saved: out[i] } };
+  });
+  if ('gone' in outcome) return err(404, 'Not found.');
+  if ('conflict' in outcome) return json({ error: 'Someone else saved a newer version of this system.', current: { data: outcome.conflict.data, version: outcome.conflict.version } }, 409);
+  const row = outcome.saved;
   if (sections.length) await audit({ orgId: a.system.orgId, systemId: id, userId: v.id, action: 'system.updated', detail: { sections } });
   return json({ version: row.version, updatedAt: row.updatedAt });
 }
@@ -51,7 +55,7 @@ export async function DELETE(req: Request, { params }: Ctx) {
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
   if (!a.caps.deleteSystems) return err(403, 'You cannot delete systems here.');
-  await db.delete(schema.aiSystems).where(eq(schema.aiSystems.id, id));
+  await deleteSystems([id]);
   await audit({ orgId: a.system.orgId, userId: v.id, action: 'system.deleted', detail: { name: a.system.name } });
   return json({ ok: true, redirect: `/o/${a.org.slug}` });
 }

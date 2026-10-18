@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation';
-import { desc, eq, inArray } from 'drizzle-orm';
-import { db, schema } from '@/db';
+import { db } from '@/data';
 import { orgForPage } from '@/lib/session';
 import { ROLE_LABEL } from '@/lib/permissions';
 
@@ -19,13 +18,9 @@ export default async function Activity({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const { org, caps } = await orgForPage(slug);
   if (!caps.manage) notFound();
-  const rows = await db.query.auditLog.findMany({ where: eq(schema.auditLog.orgId, org.id), orderBy: desc(schema.auditLog.updatedAt), limit: 200 });
-  const userIds = [...new Set(rows.map(r => r.userId).filter(Boolean))] as string[];
-  const users = userIds.length ? await db.query.users.findMany({ where: inArray(schema.users.id, userIds), columns: { id: true, email: true, name: true } }) : [];
-  const systemIds = [...new Set(rows.map(r => r.systemId).filter(Boolean))] as string[];
-  const systems = systemIds.length ? await db.query.aiSystems.findMany({ where: inArray(schema.aiSystems.id, systemIds), columns: { id: true, name: true } }) : [];
-  const uname = new Map(users.map(u => [u.id, u.name || u.email]));
-  const sname = new Map(systems.map(s => [s.id, s.name]));
+  const rows = db.auditLog.find(a => a.orgId === org.id).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(0, 200);
+  const uname = new Map(db.users.all().map(u => [u.id, u.name || u.email]));
+  const sname = new Map(db.aiSystems.find(s => s.orgId === org.id).map(s => [s.id, s.name]));
   const describe = (r: (typeof rows)[number]) => {
     const d = (r.detail || {}) as Record<string, unknown>;
     const bits: string[] = [];
