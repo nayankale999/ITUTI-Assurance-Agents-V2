@@ -8,7 +8,7 @@ import { createSystem, renameOrg } from '@/app/actions';
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const org = db.organizations.first(o => o.slug === slug);
+  const org = await db.organizations.first({ slug });
   return { title: org?.name || 'Client' };
 }
 
@@ -19,9 +19,9 @@ const riskTone = (s: number) => s >= 75 ? 'crit' : s >= 50 ? 'warn' : s >= 25 ? 
 export default async function Portfolio({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { viewer, org, caps } = await orgForPage(slug);
-  const systems = db.aiSystems.find(s => s.orgId === org.id).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  const systems = await db.aiSystems.find({ orgId: org.id }, { orderBy: [['updatedAt', 'desc']] });
   const editable = caps.orgRole === 'CONTRIBUTOR'
-    ? new Set(db.systemAssignments.find(a => a.userId === viewer.id).map(a => a.systemId))
+    ? new Set((await db.systemAssignments.find({ userId: viewer.id })).map(a => a.systemId))
     : null;
   const groups = new Map<string, typeof systems>();
   for (const s of systems) {

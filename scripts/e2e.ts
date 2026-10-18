@@ -1,6 +1,8 @@
 /* End-to-end checks against the production build.
    Usage: npm run build && npm run test:e2e
-   Uses a fresh temporary data folder, so it never touches real data. Starts `next start` itself on port 3100. */
+   Needs TEST_DATABASE_URL, a MySQL/MariaDB server URL whose user may create databases named assurance_test_*,
+   for example mysql://app:pass@127.0.0.1:3306/. Creates a fresh database and a temporary data folder, and drops
+   both at the end, so real data is never touched. Starts `next start` itself on port 3100. */
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
@@ -9,13 +11,19 @@ import path from 'path';
 
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'assurance-e2e-'));
 process.env.DATA_DIR = DATA;
+if (!process.env.TEST_DATABASE_URL) { console.error('Set TEST_DATABASE_URL, for example mysql://app:pass@127.0.0.1:3306/'); process.exit(2); }
+const DB_NAME = 'assurance_test_' + randomBytes(4).toString('hex');
+const SERVER_URL = new URL(process.env.TEST_DATABASE_URL);
+process.env.DATABASE_URL = new URL('/' + DB_NAME, SERVER_URL).toString();
 process.env.NEXTAUTH_URL = process.env.E2E_URL || 'http://localhost:3100';
 process.env.NEXTAUTH_SECRET ||= 'e2e-secret-' + randomBytes(16).toString('hex');
 process.env.BOOTSTRAP_ADMIN_EMAIL = 'boss@itutitech.test';
 process.env.SMTP_HOST = '';
 process.env.ANTHROPIC_API_KEY = '';
 
+import mysql from 'mysql2/promise';
 import { db } from '../src/data';
+import { closePool } from '../src/data/sql';
 import { hashToken } from '../src/lib/tokens';
 
 const BASE = process.env.NEXTAUTH_URL || 'http://localhost:3100';
@@ -45,7 +53,15 @@ const get = (path: string, cookie = '') => fetch(BASE + path, { headers: { cooki
 const send = (path: string, method: string, cookie: string, body: unknown, origin = BASE) =>
   fetch(BASE + path, { method, headers: { cookie, 'content-type': 'application/json', origin }, body: JSON.stringify(body), redirect: 'manual' });
 
+async function adminConn() {
+  return mysql.createConnection({ host: SERVER_URL.hostname, port: Number(SERVER_URL.port || 3306), user: decodeURIComponent(SERVER_URL.username), password: decodeURIComponent(SERVER_URL.password) });
+}
+
 async function main() {
+  const conn = await adminConn();
+  await conn.query(`CREATE DATABASE \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  await conn.end();
+  await db.users.count(); // applies the schema before the server starts
   const server = await startServer();
   const tag = 'e2e' + Date.now().toString(36);
   try {
@@ -100,7 +116,7 @@ async function main() {
     check('contributor cannot save an unassigned system', (await send(`/api/systems/${s2.id}`, 'PUT', c.contrib, { data: edited, version: 1 })).status === 403);
     const save = await send(`/api/systems/${s1.id}`, 'PUT', c.contrib, { data: edited, version: 1 });
     check('contributor saves an assigned system', save.status === 200, String(save.status));
-    const row = db.aiSystems.first(r => r.id === s1.id);
+    const row = await db.aiSystems.first({ id: s1.id });
     check('server recomputes tier, risk and readiness', row?.tier === 'high' && row.riskScore !== null && row.readiness > 0 && row.version === 2, JSON.stringify({ tier: row?.tier, risk: row?.riskScore, ready: row?.readiness, v: row?.version }));
     const stale = await send(`/api/systems/${s1.id}`, 'PUT', c.clientAdmin, { data: blank, version: 1 });
     check('a stale save is refused with 409', stale.status === 409);
@@ -114,7 +130,7 @@ async function main() {
     const ir = await send(`/api/systems/${s1.id}/incidents`, 'POST', c.contrib, inc);
     const irBody = await ir.json();
     check('contributor records an incident', ir.status === 201 && irBody.open === 1);
-    check('incident count is stored on the system', db.aiSystems.first(r => r.id === s1.id)?.openIncidents === 1);
+    check('incident count is stored on the system', (await db.aiSystems.first({ id: s1.id }))?.openIncidents === 1);
     const csv = await get(`/api/systems/${s1.id}/incidents?format=csv`, c.viewer);
     check('viewer exports incidents as CSV', csv.status === 200 && (await csv.text()).includes('Approval ratio'));
     const close = await send(`/api/incidents/${irBody.incident.id}`, 'PATCH', c.assessorIn, { status: 'closed' });
@@ -157,19 +173,19 @@ async function main() {
     check('bootstrap admin email gets a sign-in link', !!boss.url);
     if (boss.url) {
       await fetch(boss.url, { redirect: 'manual' });
-      check('bootstrap admin becomes an Ituti admin on first sign-in', db.users.first(u => u.email === 'boss@itutitech.test')?.role === 'ITUTI_ADMIN');
+      check('bootstrap admin becomes an Ituti admin on first sign-in', (await db.users.first({ email: 'boss@itutitech.test' }))?.role === 'ITUTI_ADMIN');
     }
-    const csvText = fs.readFileSync(path.join(DATA, 'ai_systems.csv'), 'utf8');
-    check('saved assessment is in ai_systems.csv', csvText.includes('Policy v2') && csvText.startsWith('\ufeffid,orgId,name'));
-    check('deleting a system removes its incidents and assignments', !db.incidents.first(i => i.systemId === s2.id) && !db.systemAssignments.first(a => a.systemId === s2.id) && !db.aiSystems.first(r => r.id === s2.id));
-    check('no lock or temporary files left behind', fs.readdirSync(DATA).every(f => !f.endsWith('.lock') && !f.endsWith('.tmp')));
+    check('saved assessment is stored in the database', ((await db.aiSystems.first({ id: s1.id }))?.data as { ctrl?: Record<string, { e?: string }> }).ctrl?.['GOV-1']?.e === 'Policy v2');
+    check('deleting a system removes its incidents and assignments', !(await db.incidents.first({ systemId: s2.id })) && !(await db.systemAssignments.first({ systemId: s2.id })) && !(await db.aiSystems.first({ id: s2.id })));
     check('disabled account gets no sign-in link', await (async () => {
-      await db.users.update(u => u.id === viewer.id, { disabled: true });
+      await db.users.update({ id: viewer.id }, { disabled: true });
       return !(await signInRequest(viewer.email)).url;
     })());
   } finally {
     try { process.kill(-server.pid!, 'SIGTERM'); } catch { server.kill('SIGTERM'); }
     fs.rmSync(DATA, { recursive: true, force: true });
+    await closePool();
+    const c2 = await adminConn(); await c2.query(`DROP DATABASE IF EXISTS \`${DB_NAME}\``); await c2.end();
   }
   const failed = results.filter(r => !r[1]);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

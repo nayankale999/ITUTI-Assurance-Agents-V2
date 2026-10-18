@@ -11,16 +11,18 @@ export default async function People({ params }: { params: Promise<{ slug: strin
   const { slug } = await params;
   const { viewer, org, caps } = await orgForPage(slug);
   if (!caps.manage) notFound();
-  const users = new Map(db.users.all().map(u => [u.id, u]));
-  const members = db.memberships.find(m => m.orgId === org.id)
+  const memberRows = await db.memberships.find({ orgId: org.id });
+  const assessorRows = await db.assessorAssignments.find({ orgId: org.id });
+  const users = new Map((await db.users.find({ id: [...memberRows, ...assessorRows].map(m => m.userId) })).map(u => [u.id, u]));
+  const members = memberRows
     .flatMap(m => { const u = users.get(m.userId); return u ? [{ userId: m.userId, role: m.role, email: u.email, name: u.name, disabled: u.disabled }] : []; })
     .sort((a, b) => a.email.localeCompare(b.email));
-  const assessors = db.assessorAssignments.find(a => a.orgId === org.id).flatMap(a => { const u = users.get(a.userId); return u ? [{ email: u.email, name: u.name }] : []; });
-  const systems = db.aiSystems.find(s => s.orgId === org.id).map(s => ({ id: s.id, name: s.name })).sort((a, b) => a.name.localeCompare(b.name));
+  const assessors = assessorRows.flatMap(a => { const u = users.get(a.userId); return u ? [{ email: u.email, name: u.name }] : []; });
+  const systems = (await db.aiSystems.find({ orgId: org.id }, { columns: ['id', 'name'], orderBy: [['name', 'asc']] })).map(s => ({ id: s.id, name: s.name }));
   const systemIds = new Set(systems.map(s => s.id));
-  const assigned = db.systemAssignments.find(a => systemIds.has(a.systemId));
+  const assigned = await db.systemAssignments.find({ systemId: [...systemIds] });
   const now = Date.now();
-  const pending = db.invitations.find(i => i.orgId === org.id && !i.acceptedAt && !i.revokedAt && i.expiresAt.getTime() > now).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const pending = await db.invitations.find({ orgId: org.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date(now) } }, { orderBy: [['createdAt', 'asc']] });
 
   return (
     <>

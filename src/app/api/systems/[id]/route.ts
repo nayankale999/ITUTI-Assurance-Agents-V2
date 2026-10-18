@@ -1,3 +1,4 @@
+import { saveSystemData } from '@/lib/systems';
 import { db, deleteSystems, type AiSystemRow } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
 import { assessmentSchema } from '@/lib/validate';
@@ -33,15 +34,7 @@ export async function PUT(req: Request, { params }: Ctx) {
   const prev = a.system.data as Record<string, unknown>;
   const sections = Object.keys({ ...prev, ...data }).filter(k => JSON.stringify(prev[k]) !== JSON.stringify((data as Record<string, unknown>)[k]));
   // Saves only if nobody else has saved since this editor loaded the record
-  type Outcome = { gone: true } | { conflict: AiSystemRow } | { saved: AiSystemRow };
-  const outcome = await db.aiSystems.mutate<Outcome>(rows => {
-    const i = rows.findIndex(r => r.id === id);
-    if (i < 0) return { rows: null, result: { gone: true } };
-    if (rows[i].version !== version) return { rows: null, result: { conflict: rows[i] } };
-    const out = [...rows];
-    out[i] = { ...rows[i], data, ...summarise(data), version: rows[i].version + 1, updatedById: v.id, updatedAt: new Date() };
-    return { rows: out, result: { saved: out[i] } };
-  });
+  const outcome = await saveSystemData(id, v.id, () => data, version);
   if ('gone' in outcome) return err(404, 'Not found.');
   if ('conflict' in outcome) return json({ error: 'Someone else saved a newer version of this system.', current: { data: outcome.conflict.data, version: outcome.conflict.version } }, 409);
   const row = outcome.saved;

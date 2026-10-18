@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { saveSystemData } from '@/lib/systems';
 import { db } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
 import { applicable, classify, TIERS, OPTS, type AssessmentData } from '@/lib/assurance';
@@ -76,15 +77,9 @@ export async function POST(req: Request, { params }: Ctx) {
 
   // Merge the review into the latest saved record, keeping any edits made while it ran
   const aiReview = { at: new Date().toISOString(), items };
-  const saved = await db.aiSystems.mutate(rows => {
-    const i = rows.findIndex(r => r.id === id);
-    if (i < 0) return { rows: null, result: null };
-    const data = { ...(rows[i].data as AssessmentData), aiReview };
-    const out = [...rows];
-    out[i] = { ...rows[i], data, ...summarise(data), version: rows[i].version + 1, updatedById: v.id, updatedAt: new Date() };
-    return { rows: out, result: out[i] };
-  });
-  if (!saved) return err(404, 'Not found.');
+  const outcome = await saveSystemData(id, v.id, d => ({ ...d, aiReview }));
+  if (!('saved' in outcome)) return err(404, 'Not found.');
+  const saved = outcome.saved;
   await audit({ orgId: a.system.orgId, systemId: id, userId: v.id, action: 'review.run', detail: { controls: count } });
   return json({ aiReview, version: saved.version });
 }

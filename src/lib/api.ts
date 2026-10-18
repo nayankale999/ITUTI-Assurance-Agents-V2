@@ -25,7 +25,7 @@ export async function loadSystem(viewer: Viewer, id: string) {
 
 /** Recomputes the open-incident count for a system. */
 export async function refreshIncidentCount(systemId: string) {
-  const open = db.incidents.find(i => i.systemId === systemId && i.status !== 'closed').length;
-  await db.aiSystems.update(s => s.id === systemId && s.openIncidents !== open, { openIncidents: open });
+  const open = await db.incidents.count({ systemId, status: { ne: 'closed' } });
+  await db.aiSystems.update({ id: systemId, openIncidents: { ne: open } }, { openIncidents: open });
   return open;
 }

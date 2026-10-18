@@ -6,7 +6,7 @@ import type { AssessmentData } from '@/lib/assurance';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const s = db.aiSystems.first(r => r.id === id);
+  const s = await db.aiSystems.first({ id });
   return { title: s?.name || 'AI system' };
 }
 
@@ -15,7 +15,7 @@ export default async function SystemPage({ params }: { params: Promise<{ slug: s
   const viewer = await requireViewer();
   const a = await systemAccess(viewer, id);
   if (!a || a.org.slug !== slug) notFound();
-  const incidents = db.incidents.find(i => i.systemId === id).sort((a, b) => b.date.localeCompare(a.date));
+  const incidents = await db.incidents.find({ systemId: id }, { orderBy: [['date', 'desc'], ['createdAt', 'desc']] });
   return (
     <SystemEditor
       key={a.system.id}

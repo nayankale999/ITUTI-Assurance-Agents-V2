@@ -13,9 +13,9 @@ export const metadata = { title: 'Invitation' };
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const hash = hashToken(token);
-  const invite = db.invitations.first(i => i.tokenHash === hash);
+  const invite = await db.invitations.first({ tokenHash: hash });
   const valid = invite && !invite.revokedAt && !invite.acceptedAt && invite.expiresAt > new Date();
-  const org = invite?.orgId ? db.organizations.first(o => o.id === invite.orgId) ?? null : null;
+  const org = invite?.orgId ? (await db.organizations.first({ id: invite.orgId })) ?? null : null;
   const viewer = await getViewer();
   const where = org ? org.name : 'the Ituti team';
   return (

@@ -10,12 +10,12 @@ export const metadata = { title: 'Ituti team' };
 
 export default async function TeamPage() {
   const viewer = await requireItutiAdmin();
-  const staff = db.users.find(u => u.role === 'ITUTI_ADMIN' || u.role === 'ITUTI_ASSESSOR').sort((a, b) => a.email.localeCompare(b.email));
-  const orgs = [...db.organizations.all()].sort((a, b) => a.name.localeCompare(b.name));
+  const staff = (await db.users.find({ role: ['ITUTI_ADMIN', 'ITUTI_ASSESSOR'] })).sort((a, b) => a.email.localeCompare(b.email));
+  const orgs = [...await db.organizations.all()].sort((a, b) => a.name.localeCompare(b.name));
   const staffIds = new Set(staff.map(s => s.id));
-  const assigns = db.assessorAssignments.find(a => staffIds.has(a.userId));
+  const assigns = await db.assessorAssignments.find({ userId: [...staffIds] });
   const now = Date.now();
-  const pending = db.invitations.find(i => !i.orgId && !i.acceptedAt && !i.revokedAt && i.expiresAt.getTime() > now).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const pending = (await db.invitations.find({ orgId: null, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date(now) } })).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   return (
     <>
       <TopBar viewer={viewer} current="team" />

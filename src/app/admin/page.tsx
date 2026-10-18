@@ -15,7 +15,7 @@ export default async function AdminHome() {
   const orgs = await visibleOrgs(viewer);
   const ids = new Set(orgs.map(o => o.id));
   const by = new Map<string, { orgId: string; systems: number; high: number; flagged: number; readiness: number; incidents: number }>();
-  for (const s of db.aiSystems.find(s => ids.has(s.orgId))) {
+  for (const s of await db.aiSystems.find({ orgId: [...ids] }, { columns: ['orgId', 'readiness', 'openIncidents', 'tier'] })) {
     const e = by.get(s.orgId) || { orgId: s.orgId, systems: 0, high: 0, flagged: 0, readiness: 0, incidents: 0 };
     e.systems++; e.readiness += s.readiness; e.incidents += s.openIncidents;
     if (s.tier === 'high') e.high++;
@@ -25,7 +25,7 @@ export default async function AdminHome() {
   for (const e of by.values()) e.readiness = Math.round(e.readiness / e.systems);
   const stats = [...by.values()];
   const mby = new Map<string, number>();
-  for (const m of db.memberships.find(m => ids.has(m.orgId))) mby.set(m.orgId, (mby.get(m.orgId) || 0) + 1);
+  for (const m of await db.memberships.find({ orgId: [...ids] })) mby.set(m.orgId, (mby.get(m.orgId) || 0) + 1);
   const totals = stats.reduce((a, s) => ({ systems: a.systems + s.systems, high: a.high + s.high, flagged: a.flagged + s.flagged, incidents: a.incidents + s.incidents }), { systems: 0, high: 0, flagged: 0, incidents: 0 });
   return (
     <>

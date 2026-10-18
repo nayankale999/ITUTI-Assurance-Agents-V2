@@ -18,9 +18,9 @@ export default async function Activity({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const { org, caps } = await orgForPage(slug);
   if (!caps.manage) notFound();
-  const rows = db.auditLog.find(a => a.orgId === org.id).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(0, 200);
-  const uname = new Map(db.users.all().map(u => [u.id, u.name || u.email]));
-  const sname = new Map(db.aiSystems.find(s => s.orgId === org.id).map(s => [s.id, s.name]));
+  const rows = await db.auditLog.find({ orgId: org.id }, { orderBy: [['updatedAt', 'desc']], limit: 200 });
+  const uname = new Map((await db.users.find({ id: [...new Set(rows.map(r => r.userId).filter((x): x is string => !!x))] })).map(u => [u.id, u.name || u.email]));
+  const sname = new Map((await db.aiSystems.find({ orgId: org.id }, { columns: ['id', 'name'] })).map(s => [s.id, s.name]));
   const describe = (r: (typeof rows)[number]) => {
     const d = (r.detail || {}) as Record<string, unknown>;
     const bits: string[] = [];

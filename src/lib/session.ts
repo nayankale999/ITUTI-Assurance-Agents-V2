@@ -10,7 +10,7 @@ export async function getViewer(): Promise<Viewer | null> {
   const session = await getServerSession(authOptions);
   const id = (session?.user as { id?: string } | undefined)?.id;
   if (!id) return null;
-  const u = db.users.first(r => r.id === id);
+  const u = await db.users.first({ id });
   if (!u || u.disabled) return null;
   return { id: u.id, email: u.email, name: u.name, role: u.role };
 }
@@ -28,15 +28,15 @@ export async function requireItutiAdmin(): Promise<Viewer> {
 }
 
 export async function capsFor(viewer: Viewer, orgId: string): Promise<OrgCaps> {
-  const assigned = viewer.role === 'ITUTI_ASSESSOR' && !!db.assessorAssignments.first(a => a.userId === viewer.id && a.orgId === orgId);
-  const member = db.memberships.first(m => m.userId === viewer.id && m.orgId === orgId);
+  const assigned = viewer.role === 'ITUTI_ASSESSOR' && !!(await db.assessorAssignments.first({ userId: viewer.id, orgId }));
+  const member = await db.memberships.first({ userId: viewer.id, orgId });
   return orgCaps({ userRole: viewer.role, assigned, orgRole: (member?.role as OrgRoleT) ?? null });
 }
 
 /** Loads an organisation by slug for a page, or 404s when the viewer may not see it. */
 export async function orgForPage(slug: string) {
   const viewer = await requireViewer();
-  const org = db.organizations.first(o => o.slug === slug);
+  const org = await db.organizations.first({ slug });
   if (!org) notFound();
   const caps = await capsFor(viewer, org.id);
   if (!caps.view) notFound();
@@ -45,12 +45,12 @@ export async function orgForPage(slug: string) {
 
 /** Loads a system with the viewer's rights over it; null when not visible. */
 export async function systemAccess(viewer: Viewer, systemId: string) {
-  const system = db.aiSystems.first(s => s.id === systemId);
+  const system = await db.aiSystems.first({ id: systemId });
   if (!system) return null;
   const caps = await capsFor(viewer, system.orgId);
   if (!caps.view) return null;
-  const assigned = caps.orgRole === 'CONTRIBUTOR' && !!db.systemAssignments.first(a => a.userId === viewer.id && a.systemId === systemId);
-  const org = db.organizations.first(o => o.id === system.orgId);
+  const assigned = caps.orgRole === 'CONTRIBUTOR' && !!(await db.systemAssignments.first({ userId: viewer.id, systemId }));
+  const org = await db.organizations.first({ id: system.orgId });
   if (!org) return null;
   return { system, org, caps, canEdit: canEditSystem(caps, assigned) };
 }
@@ -58,9 +58,9 @@ export async function systemAccess(viewer: Viewer, systemId: string) {
 /** Organisations the viewer can open, by name. */
 export async function visibleOrgs(viewer: Viewer) {
   const byName = <T extends { name: string }>(l: T[]) => [...l].sort((a, b) => a.name.localeCompare(b.name));
-  if (viewer.role === 'ITUTI_ADMIN') return byName(db.organizations.all());
+  if (viewer.role === 'ITUTI_ADMIN') return byName(await db.organizations.all());
   const ids = new Set<string>();
-  if (viewer.role === 'ITUTI_ASSESSOR') for (const a of db.assessorAssignments.find(a => a.userId === viewer.id)) ids.add(a.orgId);
-  for (const m of db.memberships.find(m => m.userId === viewer.id)) ids.add(m.orgId);
-  return byName(db.organizations.find(o => ids.has(o.id)));
+  if (viewer.role === 'ITUTI_ASSESSOR') for (const a of await db.assessorAssignments.find({ userId: viewer.id })) ids.add(a.orgId);
+  for (const m of await db.memberships.find({ userId: viewer.id })) ids.add(m.orgId);
+  return byName(await db.organizations.find({ id: [...ids] }));
 }
