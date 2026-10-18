@@ -1,3 +1,11 @@
+import { createHash } from 'crypto';
+
+// Server actions get new IDs on every build unless this key is fixed, which breaks pages left open across a
+// redeploy ("Failed to find Server Action"). Derive a stable key from the app secret when none is set.
+if (!process.env.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY && process.env.NEXTAUTH_SECRET) {
+  process.env.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY = createHash('sha256').update('server-actions:' + process.env.NEXTAUTH_SECRET).digest('base64');
+}
+
 /** @type {import('next').NextConfig} */
 const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
