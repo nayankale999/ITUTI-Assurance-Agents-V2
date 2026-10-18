@@ -1,0 +1,33 @@
+# Runs the app and its own Postgres on one server.
+# 1. Copy .env.example to .env and fill it in (DATABASE_URL is set below).
+# 2. docker compose up -d --build
+# 3. docker compose exec app node scripts/seed.mjs   (first time only)
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: assurance
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: assurance
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assurance"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://assurance:${POSTGRES_PASSWORD}@db:5432/assurance
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  pgdata:
