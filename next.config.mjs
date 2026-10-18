@@ -7,7 +7,8 @@ const securityHeaders = [
   { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
 ];
 const nextConfig = {
-  output: 'standalone',
+  // Docker builds set NEXT_OUTPUT=standalone; hosts that run `next start` (Hostinger) leave it unset.
+  ...(process.env.NEXT_OUTPUT === 'standalone' ? { output: 'standalone' } : {}),
   poweredByHeader: false,
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];

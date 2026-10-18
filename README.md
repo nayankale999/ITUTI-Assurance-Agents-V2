@@ -1,6 +1,6 @@
 # Ituti AI Assurance
 
-A multi-client web app for assessing AI systems against the **EU AI Act**, **UK requirements** (AI principles, FCA Consumer Duty, SM&CR, PRA SS1/23), **ISO/IEC 42001** and the **NIST AI RMF**. Intended to run at `assurance.itutitech.com`, styled to match the ITUTI Tech website (www.itutitech.com), which links to it from its AI Assurance page and a "Client login" link on every page.
+A multi-client web app for assessing AI systems against the **EU AI Act**, **UK requirements** (AI principles, FCA Consumer Duty, SM&CR, PRA SS1/23), **ISO/IEC 42001** and the **NIST AI RMF**. Runs at `assurance.ituti.tech` on Hostinger, styled to match the ITUTI Tech website (www.ituti.tech), which links to it from its AI Assurance page and a "Client login" link on every page.
 
 For each AI system the app records a profile, classifies it under the EU AI Act, lists the obligations that apply in the EU and UK, and assesses it against up to 39 controls mapped to all four frameworks. It also keeps a model card, performance and fairness metrics, and an incident log. Printable assurance reports and model cards can be saved as PDF from the browser.
 
@@ -57,7 +57,7 @@ You need:
 
 1. **A server with a persistent disk.** A small Linux VM is enough (Azure, AWS Lightsail, DigitalOcean, Hetzner). Docker is the simplest way to run it. Put a reverse proxy such as Caddy or nginx in front to handle HTTPS.
 2. **SMTP for email.** With Microsoft 365, enable *Authenticated SMTP* on the sending mailbox (it is off by default in many tenants). Postmark or SendGrid also work.
-3. **DNS.** Point `assurance.itutitech.com` at the server, then make sure HTTPS works.
+3. **DNS.** Point `assurance.ituti.tech` at the server, then make sure HTTPS works.
 
 ### With Docker
 

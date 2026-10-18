@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-export const SITE_URL = 'https://www.itutitech.com';
+export const SITE_URL = 'https://www.ituti.tech';
 
 export function Brand() {
   return (
@@ -31,7 +31,7 @@ export function SiteFoot() {
     <footer className="site-foot">
       <div className="wrap">
         <span>© {new Date().getFullYear()} ITUTI Tech Ltd</span>
-        <a href={SITE_URL}>itutitech.com</a>
+        <a href={SITE_URL}>ituti.tech</a>
         <a href={`${SITE_URL}/ai-assurance.html`}>About the platform</a>
         <a href={`${SITE_URL}/contact.html`}>Contact</a>
         <span className="spacer" />
