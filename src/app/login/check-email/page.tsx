@@ -1,8 +1,10 @@
+import { AuthBrand, AuthFoot } from '@/components/Brand';
 export const metadata = { title: 'Check your email' };
 
 export default function CheckEmail() {
   return (
     <main className="auth">
+      <AuthBrand />
       <section className="panel">
         <header><h2>Check your email</h2></header>
         <div className="body">
@@ -10,6 +12,7 @@ export default function CheckEmail() {
           <p className="muted">Nothing arrived? Check your junk folder, then ask your Ituti contact to confirm your invitation.</p>
         </div>
       </section>
+    <AuthFoot />
     </main>
   );
 }

@@ -1,3 +1,4 @@
+import { AuthBrand, AuthFoot } from '@/components/Brand';
 import { redirect } from 'next/navigation';
 import { getViewer } from '@/lib/session';
 import { LoginForm } from './LoginForm';
@@ -16,6 +17,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const error = sp.error ? (ERRORS[sp.error] || 'Sign-in failed. Try again.') : null;
   return (
     <main className="auth">
+      <AuthBrand />
       <section className="panel">
         <header><h2>Sign in</h2></header>
         <div className="body">
@@ -24,6 +26,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <LoginForm callbackUrl={sp.callbackUrl && sp.callbackUrl.startsWith('/') ? sp.callbackUrl : '/'} defaultEmail={sp.email || ''} />
         </div>
       </section>
+    <AuthFoot />
     </main>
   );
 }

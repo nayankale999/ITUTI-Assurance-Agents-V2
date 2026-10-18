@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { requireViewer, visibleOrgs } from '@/lib/session';
 import { TopBar } from '@/components/TopBar';
+import { SiteFoot } from '@/components/Brand';
 
 export default async function Home() {
   const viewer = await requireViewer();
@@ -21,6 +22,7 @@ export default async function Home() {
           <section className="panel"><div className="empty"><h3>No access yet</h3><p>Your account is not linked to an organisation. Ask your Ituti contact or your organisation&rsquo;s admin to invite you.</p></div></section>
         )}
       </main>
+      <SiteFoot />
     </>
   );
 }

@@ -1,6 +1,7 @@
 import { orgForPage } from '@/lib/session';
 import { TopBar } from '@/components/TopBar';
 import { OrgNav } from '@/components/OrgNav';
+import { SiteFoot } from '@/components/Brand';
 
 export default async function OrgLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -12,6 +13,7 @@ export default async function OrgLayout({ children, params }: { children: React.
         <OrgNav slug={slug} showPeople={caps.manage} />
         {children}
       </main>
+      <SiteFoot />
     </>
   );
 }

@@ -1,3 +1,4 @@
+import { AuthBrand, AuthFoot } from '@/components/Brand';
 import Link from 'next/link';
 import { db } from '@/data';
 import { getViewer } from '@/lib/session';
@@ -19,6 +20,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   const where = org ? org.name : 'the Ituti team';
   return (
     <main className="auth">
+      <AuthBrand />
       <section className="panel">
         <header><h2>{valid ? `Join ${where}` : 'Invitation unavailable'}</h2></header>
         <div className="body">
@@ -40,6 +42,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
           </>)}
         </div>
       </section>
+    <AuthFoot />
     </main>
   );
 }

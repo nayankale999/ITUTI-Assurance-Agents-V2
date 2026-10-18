@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { db } from '@/data';
 import { requireViewer, visibleOrgs } from '@/lib/session';
 import { TopBar } from '@/components/TopBar';
+import { SiteFoot } from '@/components/Brand';
 import { ActionForm, Submit } from '@/components/ActionForm';
 import { createOrg } from '@/app/actions';
 
@@ -75,6 +76,7 @@ export default async function AdminHome() {
           </section>
         )}
       </main>
+      <SiteFoot />
     </>
   );
 }

@@ -1,6 +1,6 @@
 # Ituti AI Assurance
 
-A multi-client web app for assessing AI systems against the **EU AI Act**, **UK requirements** (AI principles, FCA Consumer Duty, SM&CR, PRA SS1/23), **ISO/IEC 42001** and the **NIST AI RMF**. Intended to run at `assurance.itutitech.com`.
+A multi-client web app for assessing AI systems against the **EU AI Act**, **UK requirements** (AI principles, FCA Consumer Duty, SM&CR, PRA SS1/23), **ISO/IEC 42001** and the **NIST AI RMF**. Intended to run at `assurance.itutitech.com`, styled to match the ITUTI Tech website (www.itutitech.com), which links to it from its AI Assurance page and a "Client login" link on every page.
 
 For each AI system the app records a profile, classifies it under the EU AI Act, lists the obligations that apply in the EU and UK, and assesses it against up to 39 controls mapped to all four frameworks. It also keeps a model card, performance and fairness metrics, and an incident log. Printable assurance reports and model cards can be saved as PDF from the browser.
 

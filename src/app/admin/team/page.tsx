@@ -1,6 +1,7 @@
 import { db } from '@/data';
 import { requireItutiAdmin } from '@/lib/session';
 import { TopBar } from '@/components/TopBar';
+import { SiteFoot } from '@/components/Brand';
 import { ActionForm, Submit } from '@/components/ActionForm';
 import { inviteUser, revokeInvite, setStaffRole, setAssessorOrgs, setUserDisabled } from '@/app/actions';
 import { ROLE_LABEL } from '@/lib/permissions';
@@ -85,6 +86,7 @@ export default async function TeamPage() {
           </table></div>
         </section>
       </main>
+      <SiteFoot />
     </>
   );
 }

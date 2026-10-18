@@ -1,10 +1,42 @@
 import Link from 'next/link';
 
+export const SITE_URL = 'https://www.itutitech.com';
+
 export function Brand() {
   return (
-    <Link className="brand" href="/" aria-label="Home">
-      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect x="1" y="1" width="28" height="28" rx="7" fill="var(--accent)" /><path d="M9 21V12M15 21V9M21 21v-6" stroke="var(--accent-ink)" strokeWidth="2.4" strokeLinecap="round" /></svg>
-      <span style={{ display: 'grid', textAlign: 'left' }}><b>Ituti AI Assurance</b><span className="sub">EU AI Act · UK · ISO 42001 · NIST</span></span>
+    <Link className="brand" href="/" aria-label="Ituti AI Assurance home">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/ituti-icon.svg" alt="" width={23} height={34} />
+      <span style={{ display: 'grid', textAlign: 'left', lineHeight: 1.15 }}><b>ITUTI<i>.</i></b><span className="sub">AI Assurance</span></span>
     </Link>
+  );
+}
+
+export function AuthBrand() {
+  return (
+    <a className="auth-brand" href={SITE_URL}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/ituti-icon.svg" alt="" width={27} height={40} />
+      <span style={{ display: 'grid', lineHeight: 1.15 }}><b>ITUTI<i>.</i></b><span className="lbl">AI Assurance</span></span>
+    </a>
+  );
+}
+
+export function AuthFoot() {
+  return <p className="auth-foot">Ituti AI Assurance is run by <a href={SITE_URL}>ITUTI Tech</a>. Need access? <a href={`${SITE_URL}/contact.html`}>Contact us</a>.</p>;
+}
+
+export function SiteFoot() {
+  return (
+    <footer className="site-foot">
+      <div className="wrap">
+        <span>© {new Date().getFullYear()} ITUTI Tech Ltd</span>
+        <a href={SITE_URL}>itutitech.com</a>
+        <a href={`${SITE_URL}/ai-assurance.html`}>About the platform</a>
+        <a href={`${SITE_URL}/contact.html`}>Contact</a>
+        <span className="spacer" />
+        <span>Classification is an indication, not legal advice.</span>
+      </div>
+    </footer>
   );
 }
