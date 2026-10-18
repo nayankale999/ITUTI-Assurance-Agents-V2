@@ -53,6 +53,20 @@ How the files are protected:
 
 ## Deploying
 
+### Live: Hostinger
+
+The app runs at **https://assurance.ituti.tech** as a Node.js website on the Hostinger Business plan (account `u860433774`), built from the `main` branch of this repository:
+
+- **Build:** Next.js, Node 22, `npm run build`, started with `npm start`. Pushing to `main` rebuilds and redeploys.
+- **Data:** `DATA_DIR=/home/u860433774/assurance-data`, outside the website folder so rebuilds never touch it. Back this folder up.
+- **Email:** sent from `assurance@ituti.tech` via `smtp.hostinger.com:465`.
+- **DNS:** an `A` record for `assurance` in the ituti.tech zone points at the hosting server.
+- **Environment variables** are set in hPanel (Websites → assurance.ituti.tech → Node.js → Environment variables), never in the repository.
+
+Hostinger may run more than one process for the app. The CSV storage takes a file lock on every write, so this is safe on one server.
+
+### Elsewhere
+
 You need:
 
 1. **A server with a persistent disk.** A small Linux VM is enough (Azure, AWS Lightsail, DigitalOcean, Hetzner). Docker is the simplest way to run it. Put a reverse proxy such as Caddy or nginx in front to handle HTTPS.
