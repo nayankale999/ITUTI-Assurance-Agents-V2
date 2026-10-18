@@ -23,15 +23,18 @@ export type Opts<T> = { orderBy?: [keyof T & string, 'asc' | 'desc'][]; limit?: 
 type Exec = Pool | PoolConnection;
 const g = globalThis as unknown as { __sqlPool?: Pool; __sqlReady?: Promise<void> | null };
 
+// Node can resolve "localhost" to IPv6 (::1), which some database users are not granted; use IPv4.
+const ipv4 = (h: string) => (h === 'localhost' ? '127.0.0.1' : h);
+
 function config(): mysql.PoolOptions {
   const common = { waitForConnections: true, connectionLimit: 8, timezone: 'Z', charset: 'utf8mb4_unicode_ci', supportBigNumbers: true, dateStrings: false } as const;
   const url = process.env.DATABASE_URL;
   if (url && /^mysql|^mariadb/.test(url)) {
     const u = new URL(url.replace(/^mariadb:/, 'mysql:'));
-    return { ...common, host: u.hostname, port: Number(u.port || 3306), user: decodeURIComponent(u.username), password: decodeURIComponent(u.password), database: u.pathname.replace(/^\//, '') };
+    return { ...common, host: ipv4(u.hostname), port: Number(u.port || 3306), user: decodeURIComponent(u.username), password: decodeURIComponent(u.password), database: u.pathname.replace(/^\//, '') };
   }
   if (!process.env.DB_NAME) throw new Error('Database not configured: set DATABASE_URL, or DB_HOST, DB_PORT, DB_NAME, DB_USER and DB_PASSWORD.');
-  return { ...common, host: process.env.DB_HOST || '127.0.0.1', port: Number(process.env.DB_PORT || 3306), user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME };
+  return { ...common, host: ipv4(process.env.DB_HOST || '127.0.0.1'), port: Number(process.env.DB_PORT || 3306), user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME };
 }
 
 export function pool(): Pool {
