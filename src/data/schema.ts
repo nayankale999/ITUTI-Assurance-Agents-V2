@@ -67,6 +67,10 @@ export const MIGRATIONS: [string, string[]][] = [
       createdAt ${AT}, updatedAt ${AT}, KEY ix_a2a_ctx (orgId, contextId)) ${T}`,
     `CREATE TABLE IF NOT EXISTS a2a_contexts (id VARCHAR(64) NOT NULL PRIMARY KEY, orgId ${ID}, history LONGTEXT NOT NULL, updatedAt ${AT}, KEY ix_a2ac_org (orgId)) ${T}`,
   ]],
+  ['004_registrations', [
+    `CREATE TABLE IF NOT EXISTS registrations (id ${ID} PRIMARY KEY, email VARCHAR(255) NOT NULL, name VARCHAR(255) NOT NULL, orgName VARCHAR(255) NOT NULL,
+      expiresAt ${AT}, completedAt ${AT_NULL}, orgId ${REF}, createdAt ${AT}, KEY ix_reg_email (email)) ${T}`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */

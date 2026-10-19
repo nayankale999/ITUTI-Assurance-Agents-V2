@@ -58,6 +58,7 @@ export type Proposal = {
 export type ApiKey = { id: string; orgId: string; name: string; prefix: string; keyHash: string; createdById: string | null; createdAt: Date; lastUsedAt: Date | null; revokedAt: Date | null };
 export type UsageEvent = { id: string; orgId: string; kind: 'assessment'; systemId: string | null; runId: string | null; source: string; billable: boolean; plan: string; createdAt: Date; reportedAt: Date | null };
 export type A2ATaskRow = { id: string; orgId: string; contextId: string; task: unknown; createdAt: Date; updatedAt: Date };
+export type Registration = { id: string; email: string; name: string; orgName: string; expiresAt: Date; completedAt: Date | null; orgId: string | null; createdAt: Date };
 export type A2AContextRow = { id: string; orgId: string; history: { role: 'user' | 'assistant'; text: string }[]; updatedAt: Date };
 
 const def = (name: string, key: string[], columns: Record<string, ColType>): TableDef => ({ name, key, columns });
@@ -99,6 +100,7 @@ export const DEFS = {
   usage: def('usage_events', ['id'], { id: 'str', orgId: 'str', kind: 'str', systemId: 'str?', runId: 'str?', source: 'str', billable: 'bool', plan: 'str', createdAt: 'date', reportedAt: 'date?' }),
   a2aTasks: def('a2a_tasks', ['id'], { id: 'str', orgId: 'str', contextId: 'str', task: 'json', createdAt: 'date', updatedAt: 'date' }),
   a2aContexts: def('a2a_contexts', ['id'], { id: 'str', orgId: 'str', history: 'json', updatedAt: 'date' }),
+  registrations: def('registrations', ['id'], { id: 'str', email: 'str', name: 'str', orgName: 'str', expiresAt: 'date', completedAt: 'date?', orgId: 'str?', createdAt: 'date' }),
   proposals: def('proposals', ['id'], {
     id: 'str', runId: 'str', systemId: 'str', path: 'str', label: 'str', value: 'json', previous: 'json?', rationale: 'str', sources: 'json',
     confidence: 'str', status: 'str', decidedById: 'str?', decidedAt: 'date?', createdAt: 'date',
@@ -127,6 +129,7 @@ function makeDb(exec: () => import('mysql2/promise').Pool | PoolConnection, inTx
     usage: t<UsageEvent>(DEFS.usage, () => ({ ...withId(), systemId: null, runId: null, reportedAt: null })),
     a2aTasks: t<A2ATaskRow>(DEFS.a2aTasks, () => ({ createdAt: now(), updatedAt: now() })),
     a2aContexts: t<A2AContextRow>(DEFS.a2aContexts, () => ({ history: [], updatedAt: now() })),
+    registrations: t<Registration>(DEFS.registrations, () => ({ ...withId(), completedAt: null, orgId: null })),
     proposals: t<Proposal>(DEFS.proposals, () => ({ ...withId(), previous: null, status: 'pending', decidedById: null, decidedAt: null })),
   };
 }
@@ -176,6 +179,7 @@ export async function deleteOrg(orgId: string) {
     await t.apiKeys.remove({ orgId });
     await t.a2aTasks.remove({ orgId });
     await t.a2aContexts.remove({ orgId });
+    await t.registrations.update({ orgId }, { orgId: null });
     await t.organizations.remove({ id: orgId });
   });
 }

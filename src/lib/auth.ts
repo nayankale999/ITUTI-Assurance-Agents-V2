@@ -3,11 +3,12 @@ import EmailProvider from 'next-auth/providers/email';
 import { db } from '@/data';
 import { dbAdapter } from './auth-adapter';
 import { sendActionEmail } from './mail';
+import { liveRegistration, completeRegistration, registrationOpen } from './registration';
 
 const normalise = (e: string) => e.trim().toLowerCase();
 export const bootstrapEmail = () => normalise(process.env.BOOTSTRAP_ADMIN_EMAIL || '');
 
-/** Only existing users, people with a pending invitation, or the bootstrap admin may request a sign-in link. */
+/** Only existing users, people with a pending invitation or sign-up, or the bootstrap admin may request a sign-in link. */
 export async function mayRequestSignIn(email: string) {
   const e = normalise(email);
   if (!e) return false;
@@ -15,6 +16,7 @@ export async function mayRequestSignIn(email: string) {
   const user = await db.users.first({ email: e });
   if (user) return !user.disabled;
   const now = Date.now();
+  if (registrationOpen() && (await liveRegistration(e))) return true;
   return !!(await db.invitations.first({ email: e, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date(now) } }));
 }
 
@@ -56,6 +58,11 @@ export const authOptions: NextAuthOptions = {
     },
   },
   events: {
+    async signIn({ user }) {
+      if (!registrationOpen() || !user.email) return;
+      const u = await db.users.first({ email: normalise(user.email) });
+      if (u && !u.disabled) await completeRegistration(u).catch(e => console.error('[register] could not complete', e));
+    },
     async createUser({ user }) {
       if (user.email && normalise(user.email) === bootstrapEmail()) {
         await db.users.update({ id: user.id }, { role: 'ITUTI_ADMIN' });

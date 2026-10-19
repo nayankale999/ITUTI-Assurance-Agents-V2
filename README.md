@@ -14,15 +14,15 @@ For each AI system the app records a profile, classifies it under the EU AI Act,
 | Contributor | Their organisation | View all systems; edit only systems assigned to them; record incidents on those |
 | Viewer | Their organisation | Read systems, reports and model cards |
 
-Access is by invitation only. People sign in with a one-time link sent to their email, so there are no passwords to manage. Every change is written to an activity log for each client.
+New clients can sign up at `/register` with their name, work email and organisation. Following the emailed link proves the address and creates a workspace for the organisation with them as its client admin; Ituti admins get an email about each sign-up. AI assistance stays off for a new client until an Ituti admin switches it on, so nothing is sent to Anthropic, and no assessment is billed, before Ituti has reviewed the sign-up. Set `SELF_REGISTRATION=off` for invitation-only access. Everyone else joins by invitation. People sign in with a one-time link sent to their email, so there are no passwords to manage. Every change is written to an activity log for each client.
 
 ## The assessment agent
 
 On each system's **Evidence and agent** tab:
 
 1. **Upload evidence.** Policies, design documents, validation and test reports, impact assessments, model cards, contracts and risk register exports, as PDF, Word, Excel, CSV, text, Markdown, JSON or HTML (25 MB each, 40 per system). The text is extracted and split into passages that keep their page, sheet rows or section, so every fact can be cited.
-2. **Pre-fill with agent.** Claude works through the profile, EU AI Act classification, the controls, the model card and monitoring metrics. It searches and reads the documents and, for vendor or foundation models, looks the model up in the shared **public model library**: what the provider publishes (model or system card, usage policy, data handling, EU AI Act status), researched with web search and fetch restricted to official provider domains and kept for 90 days for every client.
-3. **Review.** Each proposal shows the value, what it would replace, a confidence level, the rationale and its sources with quotes. Accept, edit and accept, or reject. Nothing changes the assessment until someone with edit rights accepts it.
+2. **Pre-fill with agent.** Claude works through the profile, EU AI Act classification, the controls, the model card and monitoring metrics. It searches and reads the documents and, for vendor or foundation models, looks the model up (models named in the profile's vendor field are looked up before the run starts, so "Anthropic" alone is enough to bring in the current Claude model card) in the shared **public model library**: what the provider publishes (model or system card, usage policy, data handling, EU AI Act status), researched with web search and fetch restricted to official provider domains and kept for 90 days for every client.
+3. **Review.** Each proposal shows the value, what it would replace, a confidence level, the rationale and its sources with quotes. Accept, edit and accept, or reject. Model card suggestions also appear next to each field on the **Model card** tab. Nothing changes the assessment until someone with edit rights accepts it.
 
 Safeguards:
 

@@ -75,3 +75,16 @@ test('research replies are split into sections with their cited pages', () => {
   assert.deepEqual(sources.map(s => [s.ref, s.url]), [['limitations', 'https://example.ai/card'], ['restrictions', 'https://example.ai/policy']]);
   assert.equal(modelKey('Anthropic', 'Claude Sonnet 5.5'), 'anthropic/claude-sonnet-5.5');
 });
+
+test('foundation models are recognised from the vendor field, including a bare provider name', async () => {
+  const { detectModels } = await import('../src/lib/agent/detect');
+  assert.deepEqual(detectModels('Anthropic'), [{ provider: 'Anthropic', model: 'Claude (latest generally available model)', specific: false }]);
+  const sonnet = detectModels('Anthropic Claude Sonnet 5.5 via the Anthropic API (CV summarisation); in-house ranking model');
+  assert.equal(sonnet[0].provider, 'Anthropic');
+  assert.equal(sonnet[0].model, 'Claude Sonnet 5.5');
+  assert.equal(sonnet[0].specific, true);
+  assert.equal(detectModels('We use Claude Opus')[0].model, 'Claude Opus (latest generally available version)');
+  assert.equal(detectModels('OpenAI GPT-5 through Azure')[0].provider, 'OpenAI');
+  assert.equal(detectModels('IBM watsonx with Granite 3.3')[0].model, 'Granite 3.3');
+  assert.deepEqual(detectModels('Built in-house with XGBoost'), []);
+});

@@ -11,6 +11,7 @@ import { searchDocuments, readDocument } from '../documents';
 import { llm, agentModel } from './llm';
 import { getModel, modelKey, DOSSIER_KEYS } from './models';
 import { describeForAgent, validateValue, currentValue, fieldFor } from './fields';
+import { detectModels } from './detect';
 
 const MAX_TURNS = 40;
 const MAX_PROPOSALS = 150;
@@ -21,12 +22,13 @@ const SYSTEM = `You are the Ituti AI Assurance assessment agent. You pre-fill a 
 
 How to work:
 1. Call list_documents, then search and read the client's documents. Search with several specific queries per topic (for example "validation report", "DPIA", "human oversight", "bias testing", "incident").
-2. If the system uses a vendor or foundation model, call lookup_model for it to get what the provider publishes.
-3. Propose values with the propose tool, in this order: profile, classification, controls, model card, monitoring metrics.
+2. If the system uses a vendor or foundation model, use what the provider publishes. Models named in the profile have already been looked up for you (see the first message). If the documents name a more specific model or version, call lookup_model for that one too.
+3. Propose values with the propose tool, in this order: profile, classification, model card, controls, monitoring metrics.
 4. Call finish with a short summary, including the important points you could not find evidence for.
 
 Rules:
 - Only propose what a source supports. Every proposal needs at least one source. A document source needs an exact quote copied from the text you read (15 to 300 characters); the server rejects quotes it cannot find.
+- Model card: always propose every model card field you have a source for. When a vendor or foundation model is used, propose card.model (provider, model, version, how it is accessed), card.data (what the provider discloses about training data, plus any client data used), card.limitations (the provider's stated limitations alongside any found in testing) and, where relevant, card.outOfScope (the provider's usage restrictions) from the model library, even when no client documents were uploaded. Combine model and document sources in one proposal where both apply.
 - Use lookup_model sources only for facts about the model itself (vendor, version, training data, limitations, provider evaluations). They never show that the client's own controls are in place.
 - For controls, "met" needs specific evidence of the control working (a named document, owner, date or result); use "partial" when evidence exists but is incomplete, and "gap" only when a document shows the control is missing. Write the evidence note "e" as a reviewer would: what the evidence is, where it is (document and section), who owns it and when, and what is missing.
 - Do not propose for a field that already has a value unless the documents clearly contradict or materially complete it; say why in the rationale.
@@ -172,6 +174,27 @@ async function runTool(ctx: Ctx, name: string, input: Record<string, unknown>): 
   }
 }
 
+/** Looks up the foundation models named in the profile before the agent starts, so the model card can be
+ * pre-filled even when the client only wrote the provider's name. Returns text for the agent's first message. */
+async function prelookup(ctx: Ctx, data: AssessmentData): Promise<string> {
+  const p = (data.profile || {}) as Record<string, unknown>;
+  const text = [p.vendor, p.source && p.source !== 'inhouse' ? p.description : ''].filter(Boolean).join('\n');
+  const found = detectModels(String(text));
+  if (!found.length) return '';
+  const parts: string[] = [];
+  for (const f of found.slice(0, 2)) {
+    try {
+      const row = await getModel(f.provider, f.model, t => ctx.log(t));
+      ctx.models.add(row.mkey);
+      if (row.status !== 'ready') { await ctx.log(`Could not research ${f.provider} ${f.model}`); continue; }
+      await ctx.log(`Looked up ${row.provider} ${row.model} in the model library`);
+      parts.push(JSON.stringify({ model_key: row.mkey, provider: row.provider, model: row.model, guessed_from_provider_name: !f.specific, sections: row.dossier }));
+    } catch (e) { await ctx.log(`Could not research ${f.provider}: ${e instanceof Error ? e.message.slice(0, 120) : 'failed'}`); }
+  }
+  if (!parts.length) return '';
+  return `The profile names these foundation models. They have been looked up in the model library already; cite them with {"type": "model", "model_key", "section"}. Where the model was guessed from the provider name only, say so in the model card and look up the exact model if the documents name it.\n${parts.join('\n')}\n\n`;
+}
+
 /** Starts a run for a system unless one is already active. Returns the run. */
 export async function startRun(opts: { orgId: string; systemId: string; userId: string | null; source?: 'web' | 'a2a' }): Promise<AgentRun> {
   const active = await db.agentRuns.first({ systemId: opts.systemId, status: ['queued', 'running'] }, { orderBy: [['createdAt', 'desc']] });
@@ -200,9 +223,10 @@ async function execute(run: AgentRun) {
     const sys = await db.aiSystems.first({ id: run.systemId });
     if (!sys) throw new Error('The system was deleted.');
     const data = sys.data as AssessmentData;
+    const looked = await prelookup(ctx, data);
     const messages: Anthropic.MessageParam[] = [{
       role: 'user',
-      content: `AI system: ${sys.name}\nToday: ${new Date().toISOString().slice(0, 10)}\n\nThe assessment fields, their allowed values and current values follow. Controls marked [does not apply yet] may start to apply once the profile and classification are filled in.\n${describeForAgent(data)}\n\nStart with list_documents.`,
+      content: `AI system: ${sys.name}\nToday: ${new Date().toISOString().slice(0, 10)}\n\nThe assessment fields, their allowed values and current values follow. Controls marked [does not apply yet] may start to apply once the profile and classification are filled in.\n${describeForAgent(data)}\n\n${looked}Start with list_documents.`,
     }];
     const system: Anthropic.TextBlockParam[] = [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }];
     for (let turn = 0; turn < MAX_TURNS && !ctx.finished; turn++) {

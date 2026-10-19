@@ -351,3 +351,9 @@ a { color: var(--violet); }
 .agent-access { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
 .agent-access h4 { margin: 0; font-size: 14px; color: var(--heading); }
 .agent-access .ok { overflow-wrap: anywhere; font-family: var(--f-mono); font-size: 12px; }
+
+/* Agent suggestions on the model card tab */
+.note { background: color-mix(in srgb, var(--accent) 8%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin: 0 0 12px; }
+.suggest { border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 10px; padding: 10px 12px; margin: -4px 0 14px; font-size: 13px; }
+.suggest-head { display: flex; gap: 8px; align-items: center; }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }

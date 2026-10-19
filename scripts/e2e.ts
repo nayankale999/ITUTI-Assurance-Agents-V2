@@ -297,6 +297,27 @@ async function main() {
       await fetch(boss.url, { redirect: 'manual' });
       check('bootstrap admin becomes an Ituti admin on first sign-in', (await db.users.first({ email: 'boss@itutitech.test' }))?.role === 'ITUTI_ADMIN');
     }
+    // Self-service sign-up
+    check('the sign-up page loads', (await get('/register')).status === 200);
+    check('a stranger without a sign-up gets no sign-in link', !(await signInRequest(`${tag}-stranger@newco.test`)).url);
+    const { startRegistration } = await import('../src/lib/registration');
+    const regEmail = `${tag}-founder@newco.test`;
+    check('a sign-up is recorded', (await startRegistration({ email: regEmail, name: 'Nia Founder', orgName: `NewCo ${tag}` })) === 'created');
+    check('an existing member signing up is just signed in', (await startRegistration({ email: clientAdmin.email, name: 'x', orgName: 'Dup' })) === 'existing');
+    const signup = await signInRequest(regEmail);
+    check('the new sign-up gets a sign-in link', !!signup.url);
+    if (signup.url) {
+      const r = await fetch(signup.url, { redirect: 'manual' });
+      const cookie = (r.headers.getSetCookie?.() || []).find(x => x.startsWith('next-auth.session-token'))?.split(';')[0];
+      const u = await db.users.first({ email: regEmail });
+      const m = u ? await db.memberships.first({ userId: u.id }) : null;
+      const o = m ? await db.organizations.first({ id: m.orgId }) : null;
+      check('following the link creates the workspace with them as client admin', m?.role === 'CLIENT_ADMIN' && o?.name === `NewCo ${tag}` && u?.name === 'Nia Founder', JSON.stringify({ m, o }));
+      check('AI assistance starts switched off for a new sign-up', o?.aiEnabled === false);
+      check('the sign-up is completed only once', (await db.registrations.find({ email: regEmail })).every(x => x.completedAt && x.orgId === o?.id));
+      if (cookie && o) check('the new client admin opens their workspace', (await get(`/o/${o.slug}`, cookie)).status === 200);
+      if (cookie) check('the new client cannot open another client', (await get(`/o/${orgA.slug}`, cookie)).status === 404);
+    }
     check('saved assessment is stored in the database', ((await db.aiSystems.first({ id: s1.id }))?.data as { ctrl?: Record<string, { e?: string }> }).ctrl?.['GOV-1']?.e === 'Policy v2');
     check('deleting a system removes its incidents and assignments', !(await db.incidents.first({ systemId: s2.id })) && !(await db.systemAssignments.first({ systemId: s2.id })) && !(await db.aiSystems.first({ id: s2.id })));
     check('disabled account gets no sign-in link', await (async () => {

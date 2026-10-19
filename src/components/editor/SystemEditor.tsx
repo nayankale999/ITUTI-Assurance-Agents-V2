@@ -9,6 +9,7 @@ import {
 } from '@/lib/assurance';
 import { CARD_FIELDS, cardValue, residualText } from '@/lib/report';
 import { AgentPanel } from './AgentPanel';
+import { useCardProposals, SuggestionBox } from './CardSuggestions';
 
 type Incident = { id: string; title: string; date: string; severity: string; category: string; status: string; serious: boolean; notes: string };
 type Props = {
@@ -240,7 +241,10 @@ export function SystemEditor(props: Props) {
       {tab === 'classify' && <ClassifyTab data={data} ro={ro} setCls={setCls} toggleClsObj={toggleClsObj} next={() => setTab('controls')} />}
       {tab === 'controls' && <ControlsTab data={data} ro={ro} setCtrl={setCtrl} filter={ctlFilter} setFilter={setCtlFilter} ai={ai} aiEnabled={aiEnabled} runReview={runReview} />}
       {tab === 'report' && <ReportTab data={data} incidents={incidents} reportHref={`/o/${org.slug}/systems/${props.system.id}/report`} />}
-      {tab === 'card' && <CardTab data={data} ro={ro} mutate={mutate} cardHref={`/o/${org.slug}/systems/${props.system.id}/card`} />}
+      {tab === 'card' && <CardTab data={data} ro={ro} mutate={mutate} cardHref={`/o/${org.slug}/systems/${props.system.id}/card`}
+        systemId={props.system.id} canEdit={canEdit} version={() => version.current} beforeDecide={settle} onApplied={onApplied}
+        onDecided={() => fetch(`/api/systems/${props.system.id}/agent`).then(r => r.json()).then(b => setPending((b.proposals || []).length)).catch(() => {})}
+        goAgent={() => { setTab('agent'); window.scrollTo(0, 0); }} />}
       {tab === 'monitor' && <MonitorTab data={data} ro={ro} mutate={mutate} systemId={props.system.id} incidents={incidents} setIncidents={setIncidents} armed={armed} setArmed={setArmed} />}
     </>
   );
@@ -453,16 +457,34 @@ function ReportTab({ data, incidents, reportHref }: { data: AssessmentData; inci
 }
 
 /* ---------- Model card ---------- */
-function CardTab({ data, ro, mutate, cardHref }: { data: AssessmentData; ro: boolean; mutate: (fn: (d: AssessmentData) => void) => void; cardHref: string }) {
+type CardTabProps = {
+  data: AssessmentData; ro: boolean; mutate: (fn: (d: AssessmentData) => void) => void; cardHref: string;
+  systemId: string; canEdit: boolean; version: () => number; beforeDecide: () => Promise<boolean>;
+  onApplied: (d: AssessmentData, v: number) => void; onDecided: () => void; goAgent: () => void;
+};
+function CardTab({ data, ro, mutate, cardHref, ...agent }: CardTabProps) {
   const p = data.profile || {};
+  const sug = useCardProposals(agent);
+  const byField = new Map(sug.list.map(x => [x.path.slice(5), x]));
+  const empty = CARD_FIELDS.filter(([k]) => !data.card?.[k]).length;
   return (
     <div className="grid2">
-      <section className="panel"><header><h3>Model card content</h3></header><div className="body">
+      <section className="panel"><header><h3>Model card content</h3>
+        {agent.canEdit && sug.list.length > 1 && <><div className="spacer" /><button type="button" className="btn primary" onClick={() => sug.decide('accept', sug.list.map(x => x.id))} disabled={!!sug.busy}>Accept all {sug.list.length} suggestions</button></>}
+      </header><div className="body">
+        {sug.list.length > 0
+          ? <p className="note">The assessment agent has suggested {sug.list.length} model card {sug.list.length === 1 ? 'entry' : 'entries'} from your documents and the model provider&rsquo;s published information. Check each one, then accept or reject it.</p>
+          : empty > 0 && !sug.hasRun && <p className="note">Run the assessment agent from <button type="button" className="v-plain linkish" onClick={agent.goAgent}>Evidence and agent</button> to fill this card from your documents and, for vendor models such as Anthropic&rsquo;s Claude, the provider&rsquo;s published model card.</p>}
+        {sug.msg.ok && <p className="ok" role="status">{sug.msg.ok}</p>}
+        {sug.msg.err && <p className="err" role="alert">{sug.msg.err}</p>}
         <p className="muted" style={{ fontSize: 12.5 }}>Empty fields fall back to what the profile and monitoring already say.</p>
         {CARD_FIELDS.map(([k, l]) => (
-          <label className="field" key={k}><span>{l}</span>
-            <textarea id={`card-${k}`} value={data.card?.[k] || ''} readOnly={ro} maxLength={5000} placeholder={cardValue({ ...data, card: {} }, k)} onChange={e => mutate(d => { d.card = { ...(d.card || {}), [k]: e.target.value }; })} />
-          </label>
+          <div key={k}>
+            <label className="field"><span>{l}</span>
+              <textarea id={`card-${k}`} value={data.card?.[k] || ''} readOnly={ro} maxLength={5000} placeholder={cardValue({ ...data, card: {} }, k)} onChange={e => mutate(d => { d.card = { ...(d.card || {}), [k]: e.target.value }; })} />
+            </label>
+            {byField.get(k) && <SuggestionBox p={byField.get(k)!} canEdit={agent.canEdit} busy={sug.busy} decide={sug.decide} />}
+          </div>
         ))}
       </div></section>
       <section className="panel"><header><h3>Preview</h3><div className="spacer" /><Link className="btn primary" href={cardHref}>Open printable card</Link></header><div className="body">
