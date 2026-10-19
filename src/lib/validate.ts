@@ -14,6 +14,8 @@ export const assessmentSchema = z.object({
     readings: z.array(z.object({ d: str(10), v: z.number().finite() })).max(120).optional(),
   })).max(50).optional(),
   aiReview: z.object({ at: str(40), items: z.record(z.object({ v: str(20), n: str(400) })) }).optional(),
+  conf: z.record(z.object({ t: str(2500).optional(), ok: z.boolean().optional(), from: str(80).optional() })).optional(),
+  clsOk: z.object({ at: str(40), u: str(40).optional(), snap: str(20000) }).optional(),
   prov: z.record(z.object({ p: str(40), at: str(40), u: str(40), v: str(6000) })).optional(),
 }).strict();
 
@@ -26,4 +28,4 @@ export const incidentSchema = z.object({
   notes: z.string().max(5000).default(''),
 });
 
-export const incidentPatchSchema = z.object({ status: z.enum(['open', 'investigating', 'mitigated', 'closed']) });
+export const incidentPatchSchema = z.object({ status: z.enum(['open', 'investigating', 'mitigated', 'resolved', 'closed']) });

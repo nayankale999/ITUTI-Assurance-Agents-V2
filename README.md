@@ -16,6 +16,17 @@ For each AI system the app records a profile, classifies it under the EU AI Act,
 
 New clients can sign up at `/register` with their name, work email and organisation. Following the emailed link proves the address and creates a workspace for the organisation with them as its client admin; Ituti admins get an email about each sign-up. AI assistance stays off for a new client until an Ituti admin switches it on, so nothing is sent to Anthropic, and no assessment is billed, before Ituti has reviewed the sign-up. Set `SELF_REGISTRATION=off` for invitation-only access. Everyone else joins by invitation. People sign in with a one-time link sent to their email, so there are no passwords to manage. Every change is written to an activity log for each client.
 
+## Products
+
+Each client workspace is organised into six products that share one record per AI system:
+
+- **AI inventory** (the client's home page): every system with its business unit or entity, the team that manages it, the responsible person, its EU AI Act tier, risk score, journey progress, control readiness and open incidents. Filter by tier, entity, team or journey; export as a PDF report or CSV.
+- **AI risk management** (`/risk`): a 1 to 4 score per system on the AI Act's four tiers (the decimal places it within its tier from its impact factors), the portfolio average and distribution, and the basis for each classification. Confirming a classification snapshots the answers it rests on; if purpose, data, audience, regions, role or technology change later, the system is flagged for reassessment.
+- **AI advisory**: a five-step compliance journey on every system (inventory, prohibited practices scan, risk assessment, transparency check, conformity assessment) that says what to do next, with a "Why we ask" note on every question.
+- **AI incident tracker** (`/incidents`): incidents across the portfolio with the lifecycle open, investigating, mitigated, resolved, closed; possible discrimination, personal-data and reportable incidents are flagged for legal review.
+- **Audit-ready documentation** (`/documents` and each system's Document centre): AI inventory report, risk assessment summary, incident inventory, and per system a compliance overview, compliance report, model card, conformity assessment, Annex IV technical documentation, audit trail, incident inventory and metrics report. Every document prints to PDF. A model card can be shared by a revocable public link. The audit trail records each answer's before and after values, who changed it and whether it came from a person or an accepted agent proposal.
+- **AI conformity assessment** (the Conformity tab): 38 long-form questions in organisational, project and technical parts, written from Article 43 and Annex IV. Answers already recorded elsewhere pre-fill the questions and are marked for review until confirmed; the assessment agent can propose answers from documents too.
+
 ## The assessment agent
 
 On each system's **Evidence and agent** tab:

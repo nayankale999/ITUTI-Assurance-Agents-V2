@@ -4,7 +4,7 @@
 export type FrameworkKey = 'eu' | 'uk' | 'iso' | 'nist';
 export type Ctx = { high: boolean; provider: boolean; deployer: boolean; genai: boolean; agent: boolean; vendor: boolean; personal: boolean; people: boolean; fs: boolean; fsCust: boolean; t1: boolean; t2: boolean };
 export type Control = { id: string; a: string; q: string; ev: string; eu: string; uk: string; iso: string; nist: string; when?: (c: Ctx) => boolean };
-export type ProfileField = { k: string; label: string; type: 'text' | 'textarea' | 'select' | 'multi'; opts?: string; hint?: string };
+export type ProfileField = { k: string; label: string; type: 'text' | 'textarea' | 'select' | 'multi'; opts?: string; hint?: string; why?: string };
 export type ProfileSection = { title: string; note?: string; fields: ProfileField[] };
 export type Metric = { id: string; name: string; kind?: string; threshold?: string | number | null; dir?: 'above' | 'below'; readings?: { d: string; v: number }[] };
 export type ControlState = { s?: string; e?: string };
@@ -15,6 +15,10 @@ export type AssessmentData = {
   card?: Record<string, string>;
   metrics?: Metric[];
   aiReview?: { at: string; items: Record<string, { v: string; n: string }> };
+  /** Conformity assessment answers: t text, ok confirmed by a person, from where pre-filled or proposed text came from. */
+  conf?: Record<string, { t?: string; ok?: boolean; from?: string }>;
+  /** Classification confirmed by a person, with a snapshot of the profile answers it was based on. */
+  clsOk?: { at: string; u?: string; snap: string };
   /** Fields filled from an accepted agent proposal: v is the accepted value as JSON, so a later manual edit shows as no longer agent-sourced. */
   prov?: Record<string, Prov>;
 };
@@ -43,30 +47,32 @@ export const OPTS: Record<string, [string, string][]> = {
 
 export const PROFILE_SECTIONS: ProfileSection[] = [
   { title: 'Identity', fields: [
-    { k:'name', label:'System name', type:'text' },
-    { k:'client', label:'Client or business unit', type:'text', hint:'Used to group systems in the portfolio' },
-    { k:'owner', label:'Accountable owner', type:'text', hint:'Name and role of the person answerable for outcomes' },
-    { k:'description', label:'What the system does', type:'textarea', hint:'Purpose, inputs, outputs and who uses the outputs' },
-    { k:'lifecycle', label:'Lifecycle stage', type:'select', opts:'lifecycle' },
+    { k:'name', label:'System name', type:'text', why:'The name used in the inventory, reports and model card.' },
+    { k:'client', label:'Business unit or legal entity', type:'text', hint:'Used to group systems across subsidiaries and business units', why:'Groups systems by entity, so a multi-entity group can see its whole AI estate and each entity its own.' },
+    { k:'team', label:'Team that manages it', type:'text', hint:'For example HR Technology or Credit Risk Analytics', why:'An auditor’s first question is who runs the system day to day; the team is who they will talk to.' },
+    { k:'owner', label:'Responsible person', type:'text', hint:'Name and role of the person formally accountable for outcomes', why:'The AI Act and SM&CR both expect a named individual who answers for the system (Art. 26(2), Art. 17(1)(m)).' },
+    { k:'description', label:'What the system does', type:'textarea', hint:'Purpose, inputs, outputs and who uses the outputs', why:'The intended purpose decides the risk tier and every obligation that follows (Art. 3(12)).' },
+    { k:'lifecycle', label:'Lifecycle stage', type:'select', opts:'lifecycle', why:'Obligations apply before a system is placed on the market or put into service, so the stage tells you what is due now.' },
   ]},
   { title: 'Context', fields: [
-    { k:'regions', label:'Where it is used or its outputs take effect', type:'multi', opts:'regions' },
-    { k:'sector', label:'Sector', type:'select', opts:'sector' },
-    { k:'func', label:'Business function', type:'select', opts:'func' },
-    { k:'role', label:'Your organisation’s role', type:'multi', opts:'role', hint:'Determines provider versus deployer obligations under the EU AI Act' },
+    { k:'regions', label:'Where it is used or its outputs take effect', type:'multi', opts:'regions', why:'The EU AI Act applies when the system or its outputs are used in the EU, wherever it is built (Art. 2).' },
+    { k:'sector', label:'Sector', type:'select', opts:'sector', why:'Sector decides which supervisors and rules apply alongside the AI Act, such as the FCA, PRA or insurance rules.' },
+    { k:'func', label:'Business function', type:'select', opts:'func', why:'Some functions, such as credit, recruitment and insurance pricing, fall under Annex III and are presumed high-risk.' },
+    { k:'role', label:'Your organisation’s role', type:'multi', opts:'role', hint:'Determines provider versus deployer obligations under the EU AI Act', why:'Providers carry the conformity assessment; deployers carry duties of use, oversight and monitoring (Art. 16, Art. 26).' },
   ]},
-  { title: 'Technology', fields: [
-    { k:'aiType', label:'Type of AI', type:'multi', opts:'aiType' },
-    { k:'source', label:'Where the model comes from', type:'select', opts:'source' },
-    { k:'vendor', label:'Vendor or foundation model', type:'text', hint:'For example the product name or model family' },
-    { k:'version', label:'Current version', type:'text' },
+  { title: 'Technology and data', fields: [
+    { k:'aiType', label:'Type of AI', type:'multi', opts:'aiType', why:'Generative and agentic systems bring extra risks and controls, such as hallucination testing and action limits.' },
+    { k:'source', label:'Where the model comes from', type:'select', opts:'source', why:'Third-party models need supplier due diligence and the provider’s documentation (Art. 25).' },
+    { k:'vendor', label:'Vendor or foundation model', type:'text', hint:'For example the product name or model family', why:'Naming the model lets the assessment agent bring in what its provider publishes.' },
+    { k:'version', label:'Current version', type:'text', why:'Assessments are of a specific version; a substantial change needs reassessment (Art. 43(4)).' },
+    { k:'dataSources', label:'Data sources and categories', type:'textarea', hint:'Where training and input data come from, and what kinds of data they hold', why:'Data governance obligations start from knowing each source and what it contains (Art. 10).' },
   ]},
-  { title: 'Impact factors', note:'These six answers drive the inherent risk score.', fields: [
-    { k:'affects', label:'Who is affected by its outputs', type:'select', opts:'affects' },
-    { k:'personal', label:'Data processed', type:'select', opts:'personal' },
-    { k:'scale', label:'People affected each year', type:'select', opts:'scale' },
-    { k:'autonomy', label:'Degree of automation', type:'select', opts:'autonomy' },
-    { k:'revers', label:'Reversibility of a wrong outcome', type:'select', opts:'revers' },
+  { title: 'Impact factors', note:'These answers drive the inherent risk score.', fields: [
+    { k:'affects', label:'Who is affected by its outputs', type:'select', opts:'affects', why:'Effects on employees, customers or the public raise the stakes and bring fundamental-rights duties.' },
+    { k:'personal', label:'Data processed', type:'select', opts:'personal', why:'Personal and special category data bring GDPR duties and raise the potential for harm.' },
+    { k:'scale', label:'People affected each year', type:'select', opts:'scale', why:'The more people affected, the greater the impact of a systematic error.' },
+    { k:'autonomy', label:'Degree of automation', type:'select', opts:'autonomy', why:'The less a person reviews each outcome, the more the controls and oversight design have to carry.' },
+    { k:'revers', label:'Reversibility of a wrong outcome', type:'select', opts:'revers', why:'Harm that is hard to undo needs stronger safeguards before use.' },
   ]},
 ];
 
@@ -344,3 +350,15 @@ export function metricStatus(m: Metric): { tone: string; label: string } {
   return margin > 0.1 ? { tone:'crit', label:'Breach' } : { tone:'warn', label:'Near breach' };
 }
 
+
+/* "Why we ask" notes for the classification questions, in plain language. */
+export const WHY: Record<string, string> = {
+  prohibited: 'Article 5 bans a short list of practices outright in the EU since February 2025. If any applies, nothing else in the assessment matters until it is resolved.',
+  annex3: 'Systems used in the areas listed in Annex III are presumed high-risk, because they can decide access to work, money, insurance, education or public services.',
+  annex1: 'AI that is a safety component of a product already regulated by EU product-safety law (machinery, medical devices, toys and others) is high-risk through that route.',
+  profiling: 'A system that profiles people can never use the Article 6(3) exemption, so this answer can keep a system in the high-risk tier.',
+  exempt: 'An Annex III system is not high-risk if it only performs a narrow, preparatory or supporting task. You must document why (Art. 6(4)).',
+  transparency: 'Article 50 adds disclosure duties for chatbots, synthetic content, emotion recognition and deepfakes, whatever the risk tier.',
+  gpai: 'Organisations that place a general-purpose model on the market take on separate provider duties. Using someone else’s model through an API does not count.',
+  confirm: 'Confirming records who accepted the classification and the answers it was based on. If those answers change later, the system is flagged for reassessment.',
+};

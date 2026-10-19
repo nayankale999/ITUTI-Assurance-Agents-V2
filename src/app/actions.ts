@@ -334,3 +334,33 @@ export async function createSystem(_: ActionState, fd: FormData): Promise<Action
   } catch (e) { return fail(e); }
   redirect(dest);
 }
+
+/* ---------- Public model card links ---------- */
+export async function createShareLink(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    const { systemAccess } = await import('@/lib/session');
+    const a = await systemAccess(v, String(fd.get('systemId') || ''));
+    if (!a || !a.canEdit) return { error: 'You cannot share this system’s model card.' };
+    const token = newToken();
+    await db.shares.insert({ orgId: a.org.id, systemId: a.system.id, kind: 'card', tokenHash: hashToken(token), createdById: v.id });
+    await audit({ orgId: a.org.id, systemId: a.system.id, userId: v.id, action: 'share.created', detail: { kind: 'model card' } });
+    revalidatePath(`/o/${a.org.slug}/systems/${a.system.id}/documents`);
+    return { ok: `Public link created. Copy it now; it is not shown again: ${appUrl()}/share/${token}` };
+  } catch (e) { return fail(e); }
+}
+
+export async function revokeShareLink(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    const link = await db.shares.first({ id: String(fd.get('id') || '') });
+    if (!link) return { error: 'Link not found.' };
+    const { systemAccess } = await import('@/lib/session');
+    const a = await systemAccess(v, link.systemId);
+    if (!a || !a.canEdit) return { error: 'You cannot change this system’s links.' };
+    await db.shares.update({ id: link.id }, { revokedAt: new Date() });
+    await audit({ orgId: a.org.id, systemId: a.system.id, userId: v.id, action: 'share.revoked', detail: { kind: 'model card' } });
+    revalidatePath(`/o/${a.org.slug}/systems/${a.system.id}/documents`);
+    return { ok: 'Link revoked.' };
+  } catch (e) { return fail(e); }
+}

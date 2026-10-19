@@ -3,13 +3,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  OPTS, PROFILE_SECTIONS, PROHIBITED, ANNEX3, TRANSPARENCY, AREAS, STATUS, TIERS,
+  OPTS, PROFILE_SECTIONS, PROHIBITED, ANNEX3, TRANSPARENCY, AREAS, STATUS, TIERS, WHY,
   classify, obligations, applicable, inherentRisk, readiness, frameworkCoverage, metricStatus,
   type AssessmentData, type Control, type Metric, type ProfileField,
 } from '@/lib/assurance';
 import { CARD_FIELDS, cardValue, residualText } from '@/lib/report';
 import { AgentPanel } from './AgentPanel';
 import { useCardProposals, SuggestionBox } from './CardSuggestions';
+import { journey, reassessment, regulatoryScore, contextSnapshot } from '@/lib/journey';
+import { CONF_PARTS, CONF_MAX, questionsFor, answerState, confProgress, art43 } from '@/lib/conformity';
+import { INCIDENT_STATUSES, INCIDENT_CATEGORIES, SEVERITIES, sevTone, legalReview, isActive } from '@/lib/incidents';
 
 type Incident = { id: string; title: string; date: string; severity: string; category: string; status: string; serious: boolean; notes: string };
 type Props = {
@@ -21,9 +24,10 @@ type Props = {
   aiEnabled: boolean;
   aiBlockedReason: string | null;
   accept: string;
+  initialTab?: string;
 };
 
-const TABS = [['agent', 'Evidence and agent'], ['profile', 'Profile'], ['classify', 'Classification'], ['controls', 'Controls'], ['report', 'Report'], ['card', 'Model card'], ['monitor', 'Monitoring']] as const;
+const TABS = [['agent', 'Evidence and agent'], ['profile', 'Profile'], ['classify', 'Classification'], ['controls', 'Controls'], ['conformity', 'Conformity'], ['report', 'Report'], ['card', 'Model card'], ['monitor', 'Monitoring']] as const;
 type Tab = (typeof TABS)[number][0];
 const optLabel = (k: string, v: unknown) => (OPTS[k].find(o => o[0] === v) || [, ''])[1];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -50,6 +54,11 @@ function Seg({ value, options, onChange, ro, plain }: { value?: string; options:
   );
 }
 
+function Why({ text }: { text?: string }) {
+  if (!text) return null;
+  return <details className="why"><summary>Why we ask</summary><p>{text}</p></details>;
+}
+
 function Chip({ on, label, onToggle, ro, title }: { on: boolean; label: string; onToggle: () => void; ro?: boolean; title?: string }) {
   return <button type="button" className="chk" aria-pressed={on} onClick={onToggle} disabled={ro} title={title}>{label}</button>;
 }
@@ -71,7 +80,7 @@ export function SystemEditor(props: Props) {
   const router = useRouter();
   const [data, setData] = useState<AssessmentData>(props.system.data);
   const fresh = !Object.keys(props.system.data.profile || {}).some(k => k !== 'name' && k !== 'regions' && k !== 'role' && k !== 'aiType');
-  const [tab, setTab] = useState<Tab>(fresh && canEdit ? 'agent' : 'profile');
+  const [tab, setTab] = useState<Tab>(TABS.some(t => t[0] === props.initialTab) ? props.initialTab as Tab : fresh && canEdit ? 'agent' : 'profile');
   const [pending, setPending] = useState(0);
   const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
   const [saveMsg, setSaveMsg] = useState('');
@@ -192,8 +201,12 @@ export function SystemEditor(props: Props) {
     controls: rd.open === 0 && rd.den > 0,
     report: false,
     card: !!data.card?.purpose,
+    conformity: confProgress(data).pct === 100,
     monitor: !!data.metrics?.length,
   };
+  const jr = journey(data);
+  const score = regulatoryScore(data);
+  const confirmCls = () => mutate(d => { d.clsOk = { at: new Date().toISOString(), snap: contextSnapshot(d) }; });
 
   return (
     <>
@@ -215,17 +228,19 @@ export function SystemEditor(props: Props) {
         <div className="sys-title">
           <div><h1>{p.name || 'Untitled system'}</h1><p className="muted">{p.description ? (p.description.length > 200 ? p.description.slice(0, 200) + '…' : p.description) : 'Describe the system on the Profile tab.'}</p></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Link className="btn primary" href={`/o/${org.slug}/systems/${props.system.id}/documents`}>Document centre</Link>
             <Link className="btn" href={`/o/${org.slug}/systems/${props.system.id}/report`}>Assurance report</Link>
-            <Link className="btn" href={`/o/${org.slug}/systems/${props.system.id}/card`}>Model card</Link>
             {canDelete && <button className={`btn danger ${armed === 'sys' ? 'armed' : ''}`} onClick={deleteSystem}>{armed === 'sys' ? 'Confirm delete' : 'Delete'}</button>}
           </div>
         </div>
         <div className="gauges">
-          <div className="gauge"><span className="k">EU AI Act classification</span><span className="v"><TierPill tier={cls.tier} /></span><span className="muted" style={{ fontSize: 12 }}>{cls.euScope ? (cls.reasons[0] ? cls.reasons[0].split(':')[0] : 'Complete the Classification tab') : 'Outside EU deployment'}</span></div>
+          <div className="gauge"><span className="k">EU AI Act classification</span><span className="v"><TierPill tier={cls.tier} />{score != null && <small title="Risk score on the four EU AI Act tiers: the whole number is the tier, the decimal is where the system sits within it">score {score.toFixed(1)} / 4</small>}</span><span className="muted" style={{ fontSize: 12 }}>{cls.euScope ? (cls.reasons[0] ? cls.reasons[0].split(':')[0] : 'Complete the Classification tab') : 'Outside EU deployment'}</span></div>
           <div className="gauge"><span className="k">Inherent risk score</span><span className="v">{ir ? <>{ir.score}<small>/ 100</small> <span className={`pill t-${ir.tone}`}>{ir.band}</span></> : <small>Answer the impact factors on the Profile tab</small>}</span></div>
           <div className="gauge"><span className="k">Control readiness</span><span className="v">{rd.pct}%<small>{rd.met} met · {rd.partial} partial · {rd.gap} not met · {rd.open} open</small></span></div>
         </div>
       </section>
+
+      <Journey steps={jr.steps} current={jr.current} go={t => { setTab(t as Tab); window.scrollTo(0, 0); }} />
 
       <nav className="tabs" role="tablist">
         {TABS.map(([k, l], i) => (
@@ -238,7 +253,8 @@ export function SystemEditor(props: Props) {
       {tab === 'agent' && <AgentPanel systemId={props.system.id} canEdit={canEdit} aiEnabled={aiEnabled} blockedReason={props.aiBlockedReason} accept={props.accept}
         version={() => version.current} beforeDecide={settle} onApplied={onApplied} onPending={setPending} />}
       {tab === 'profile' && <ProfileTab p={p} ro={ro} setProfile={setProfile} toggleProfile={toggleProfile} next={() => setTab('classify')} />}
-      {tab === 'classify' && <ClassifyTab data={data} ro={ro} setCls={setCls} toggleClsObj={toggleClsObj} next={() => setTab('controls')} />}
+      {tab === 'classify' && <ClassifyTab data={data} ro={ro} setCls={setCls} toggleClsObj={toggleClsObj} confirm={confirmCls} next={() => setTab('controls')} />}
+      {tab === 'conformity' && <ConformityTab data={data} ro={ro} mutate={mutate} />}
       {tab === 'controls' && <ControlsTab data={data} ro={ro} setCtrl={setCtrl} filter={ctlFilter} setFilter={setCtlFilter} ai={ai} aiEnabled={aiEnabled} runReview={runReview} />}
       {tab === 'report' && <ReportTab data={data} incidents={incidents} reportHref={`/o/${org.slug}/systems/${props.system.id}/report`} />}
       {tab === 'card' && <CardTab data={data} ro={ro} mutate={mutate} cardHref={`/o/${org.slug}/systems/${props.system.id}/card`}
@@ -259,6 +275,7 @@ function Field({ f, p, ro, setProfile, toggleProfile }: { f: ProfileField; p: Re
       <span>{f.label}</span>
       <div className="checks" role="group" aria-label={f.label}>{OPTS[f.opts!].map(([k, l]) => <Chip key={k} on={(v || []).includes(k)} label={l} ro={ro} onToggle={() => toggleProfile(f.k, k)} />)}</div>
       {f.hint && <small>{f.hint}</small>}
+      <Why text={f.why} />
     </div>
   );
   return (
@@ -273,13 +290,14 @@ function Field({ f, p, ro, setProfile, toggleProfile }: { f: ProfileField; p: Re
         </select>
       )}
       {f.hint && <small>{f.hint}</small>}
+      <Why text={f.why} />
     </label>
   );
 }
 
 function ProfileTab({ p, ro, setProfile, toggleProfile, next }: { p: Record<string, any>; ro: boolean; setProfile: (k: string, v: unknown) => void; toggleProfile: (k: string, v: string) => void; next: () => void }) {
   const sections = PROFILE_SECTIONS.map(s => s.title === 'Identity'
-    ? { ...s, fields: s.fields.map(f => f.k === 'client' ? { ...f, label: 'Business unit', hint: 'Used to group systems within this client' } : f) }
+    ? { ...s, fields: s.fields.map(f => f.k === 'client' ? { ...f, label: 'Business unit or entity', hint: 'Used to group systems across business units and subsidiaries' } : f) }
     : s);
   return (
     <>
@@ -307,8 +325,9 @@ function Obligations({ data }: { data: AssessmentData }) {
   );
 }
 
-function ClassifyTab({ data, ro, setCls, toggleClsObj, next }: { data: AssessmentData; ro: boolean; setCls: (k: string, v: unknown) => void; toggleClsObj: (g: 'a3' | 't', k: string) => void; next: () => void }) {
-  const c = data.cls || {}, r = classify(data);
+function ClassifyTab({ data, ro, setCls, toggleClsObj, confirm, next }: { data: AssessmentData; ro: boolean; setCls: (k: string, v: unknown) => void; toggleClsObj: (g: 'a3' | 't', k: string) => void; confirm: () => void; next: () => void }) {
+  const c = data.cls || {}, r = classify(data), re = reassessment(data);
+  const anyTx = TRANSPARENCY.some(([k]) => c.t?.[k]);
   const yn: [string, string][] = [['no', 'No'], ['yes', 'Yes'], ['unsure', 'Unsure']];
   const two: [string, string][] = [['no', 'No'], ['yes', 'Yes']];
   return (
@@ -321,28 +340,34 @@ function ClassifyTab({ data, ro, setCls, toggleClsObj, next }: { data: Assessmen
             {r.reasons.length ? <ul className="reasons">{r.reasons.map(x => <li key={x}>{x}</li>)}</ul> : <p className="muted">Answer the screens below to classify the system.</p>}
             {r.flags.map(f => <div key={f} className="flag">{f}</div>)}
             {r.fria && <div className="flag">A fundamental rights impact assessment is required before first use (Art. 27).</div>}
-            <p className="muted" style={{ fontSize: 12 }}>An indication based on your answers, not legal advice. Record who confirmed the classification in control GOV-3.</p>
+            {re.changed.length > 0 && <div className="flag" role="status"><b>Reassessment needed.</b> Since the classification was confirmed on {new Date(re.at!).toLocaleDateString('en-GB')}, these answers changed: {re.changed.join(', ')}. Check the screens below, then confirm again.</div>}
+            {r.tier !== 'unknown' && !ro && (re.changed.length || !re.confirmed
+              ? <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '10px 0' }}><button type="button" className="btn primary" onClick={confirm}>Confirm this classification</button><Why text={WHY.confirm} /></div>
+              : <p className="ok">Classification confirmed on {new Date(re.at!).toLocaleDateString('en-GB')}.</p>)}
+            {ro && re.confirmed && !re.changed.length && <p className="ok">Classification confirmed on {new Date(re.at!).toLocaleDateString('en-GB')}.</p>}
+            <p className="muted" style={{ fontSize: 12 }}>A computed indication based on your answers, not legal advice.</p>
           </div>
           <div><span className="eyebrow">What applies</span><Obligations data={data} /></div>
         </div>
       </section>
 
-      <section className="panel"><header><div><h3>Step 1. Prohibited practices</h3><small className="muted">EU AI Act Article 5. Answer every screen.</small></div></header>
+      <section className="panel"><header><div><h3>Step 1. Prohibited practices</h3><small className="muted">EU AI Act Article 5. Answer every screen.</small><Why text={WHY.prohibited} /></div></header>
         <div className="qlist">{PROHIBITED.map(([k, t, ref]) => (
           <div className="q" key={k}><div><p>{t}</p><span className="ref">{ref}</span></div><Seg value={c[k]} options={yn} ro={ro} onChange={v => setCls(k, v)} /></div>
         ))}</div></section>
 
-      <section className="panel"><header><div><h3>Step 2. High-risk uses</h3><small className="muted">Select every area the system is used in.</small></div></header>
+      <section className="panel"><header><div><h3>Step 2. High-risk uses</h3><small className="muted">Select every area the system is used in.</small><Why text={WHY.annex3} /></div></header>
         <div className="body"><div className="checks">{ANNEX3.map(([k, t, ref]) => <Chip key={k} on={!!c.a3?.[k]} label={t} title={ref} ro={ro} onToggle={() => toggleClsObj('a3', k)} />)}</div></div>
         <div className="qlist">
-          <div className="q"><div><p>Is it a safety component of, or itself, a product covered by EU product-safety law such as medical devices or machinery?</p><span className="ref">Art. 6(1), Annex I</span></div><Seg value={c.annex1} options={two} ro={ro} onChange={v => setCls('annex1', v)} /></div>
-          <div className="q"><div><p>Does it profile individuals, meaning it evaluates personal aspects such as economic situation, behaviour or reliability?</p><span className="ref">Art. 6(3)</span></div><Seg value={c.profiling} options={two} ro={ro} onChange={v => setCls('profiling', v)} /></div>
-          <div className="q"><div><p>Does it only perform a narrow procedural task, improve a completed human activity, detect patterns without replacing human assessment, or prepare an assessment?</p><span className="ref">Art. 6(3) exemption</span></div><Seg value={c.exempt} options={two} ro={ro} onChange={v => setCls('exempt', v)} /></div>
+          <div className="q"><div><p>Is it a safety component of, or itself, a product covered by EU product-safety law such as medical devices or machinery?</p><span className="ref">Art. 6(1), Annex I</span><Why text={WHY.annex1} /></div><Seg value={c.annex1} options={two} ro={ro} onChange={v => setCls('annex1', v)} /></div>
+          <div className="q"><div><p>Does it profile individuals, meaning it evaluates personal aspects such as economic situation, behaviour or reliability?</p><span className="ref">Art. 6(3)</span><Why text={WHY.profiling} /></div><Seg value={c.profiling} options={two} ro={ro} onChange={v => setCls('profiling', v)} /></div>
+          <div className="q"><div><p>Does it only perform a narrow procedural task, improve a completed human activity, detect patterns without replacing human assessment, or prepare an assessment?</p><span className="ref">Art. 6(3) exemption</span><Why text={WHY.exempt} /></div><Seg value={c.exempt} options={two} ro={ro} onChange={v => setCls('exempt', v)} /></div>
         </div></section>
 
-      <section className="panel"><header><div><h3>Step 3. Transparency and general-purpose AI</h3><small className="muted">Select any that apply.</small></div></header>
-        <div className="body"><div className="checks">{TRANSPARENCY.map(([k, t, ref]) => <Chip key={k} on={!!c.t?.[k]} label={t} title={ref} ro={ro} onToggle={() => toggleClsObj('t', k)} />)}</div></div>
-        <div className="qlist"><div className="q"><div><p>Do you place a general-purpose AI model on the market, rather than only using one?</p><span className="ref">Art. 51–55</span></div><Seg value={c.gpai} options={two} ro={ro} onChange={v => setCls('gpai', v)} /></div></div>
+      <section className="panel"><header><div><h3>Step 3. Transparency check and general-purpose AI</h3><small className="muted">Select any that apply, or confirm that none do.</small><Why text={WHY.transparency} /></div></header>
+        <div className="body"><div className="checks">{TRANSPARENCY.map(([k, t, ref]) => <Chip key={k} on={!!c.t?.[k]} label={t} title={ref} ro={ro} onToggle={() => { toggleClsObj('t', k); if (c.tNone === 'yes') setCls('tNone', 'no'); }} />)}
+          <Chip on={c.tNone === 'yes' && !anyTx} label="None of these apply" ro={ro || anyTx} onToggle={() => setCls('tNone', c.tNone === 'yes' ? 'no' : 'yes')} /></div></div>
+        <div className="qlist"><div className="q"><div><p>Do you place a general-purpose AI model on the market, rather than only using one?</p><span className="ref">Art. 51–55</span><Why text={WHY.gpai} /></div><Seg value={c.gpai} options={two} ro={ro} onChange={v => setCls('gpai', v)} /></div></div>
       </section>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn primary" onClick={next}>Continue to controls</button></div>
     </>
@@ -425,7 +450,7 @@ function ReportTab({ data, incidents, reportHref }: { data: AssessmentData; inci
   const order: Record<string, number> = { gap: 0, partial: 1 };
   const gaps = list.filter(k => { const s = ctrl[k.id]?.s; return s !== 'met' && s !== 'na'; })
     .sort((a, b) => (order[ctrl[a.id]?.s || ''] ?? 2) - (order[ctrl[b.id]?.s || ''] ?? 2));
-  const openInc = incidents.filter(i => i.status !== 'closed');
+  const openInc = incidents.filter(i => isActive(i.status));
   return (
     <>
       <section className="panel"><header><h3>Framework coverage</h3><div className="spacer" /><Link className="btn primary" href={reportHref}>Open printable report</Link></header>
@@ -525,7 +550,6 @@ function MonitorTab({ data, ro, mutate, systemId, incidents, setIncidents, armed
 }) {
   const ms = data.metrics || [];
   const [msg, setMsg] = useState('');
-  const sev: Record<string, string> = { low: 't-muted', medium: 't-info', high: 't-warn', critical: 't-crit' };
 
   function addMetric(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -604,8 +628,8 @@ function MonitorTab({ data, ro, mutate, systemId, incidents, setIncidents, armed
           <form className="grid3" onSubmit={addIncident}>
             <label className="field span2"><span>What happened</span><input type="text" name="title" required maxLength={300} placeholder="Short description" /></label>
             <label className="field"><span>Date</span><input type="date" name="date" defaultValue={today()} required /></label>
-            <label className="field"><span>Severity</span><select name="severity" defaultValue="medium"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label>
-            <label className="field"><span>Category</span><select name="category"><option>Performance degradation</option><option>Bias or discrimination</option><option>Harmful or incorrect output</option><option>Security or data leak</option><option>Misuse</option><option>Outage or failure</option><option>Other</option></select></label>
+            <label className="field"><span>Severity</span><select name="severity" defaultValue="medium">{SEVERITIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+            <label className="field"><span>Category</span><select name="category">{INCIDENT_CATEGORIES.map(x => <option key={x}>{x}</option>)}</select></label>
             <label className="field"><span>Reportable serious incident?</span><select name="serious"><option value="no">No</option><option value="yes">Yes or possibly</option></select></label>
             <label className="field span2"><span>Details and actions</span><textarea name="notes" maxLength={5000} placeholder="Impact, people affected, containment, next steps" /></label>
             <div style={{ display: 'flex', alignItems: 'end' }}><button className="btn primary">Record incident</button></div>
@@ -616,13 +640,91 @@ function MonitorTab({ data, ro, mutate, systemId, incidents, setIncidents, armed
           {incidents.length ? incidents.map(i => (
             <tr key={i.id}>
               <td className="mono">{i.date}</td>
-              <td><b>{i.title}</b>{i.serious && <> <span className="pill t-crit">Reportable</span></>}<div className="muted" style={{ fontSize: 12 }}>{i.category}{i.notes ? ` · ${i.notes}` : ''}</div></td>
-              <td><span className={`pill ${sev[i.severity] || 't-muted'}`}>{i.severity}</span></td>
-              <td>{ro ? i.status : <select value={i.status} aria-label="Status" style={{ width: 'auto' }} onChange={e => setStatus(i.id, e.target.value)}>{['open', 'investigating', 'mitigated', 'closed'].map(s => <option key={s}>{s}</option>)}</select>}</td>
+              <td><b>{i.title}</b>{i.serious && <> <span className="pill t-crit">Reportable</span></>}{legalReview(i) && <> <span className="pill t-warn" title={legalReview(i)!}>Legal review</span></>}<div className="muted" style={{ fontSize: 12 }}>{i.category}{i.notes ? ` · ${i.notes}` : ''}</div></td>
+              <td><span className={`pill ${sevTone(i.severity)}`}>{i.severity}</span></td>
+              <td>{ro ? i.status : <select value={i.status} aria-label="Status" style={{ width: 'auto' }} onChange={e => setStatus(i.id, e.target.value)}>{INCIDENT_STATUSES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>}</td>
               <td>{!ro && <button className={`btn ghost danger ${armed === `i-${i.id}` ? 'armed' : ''}`} onClick={() => deleteIncident(i.id)}>{armed === `i-${i.id}` ? 'Confirm' : 'Delete'}</button>}</td>
             </tr>
           )) : <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 24 }}>No incidents recorded.</td></tr>}
         </tbody></table></div>
+      </section>
+    </>
+  );
+}
+
+/* ---------- Compliance journey ---------- */
+function Journey({ steps, current, go }: { steps: ReturnType<typeof journey>['steps']; current: number; go: (tab: string) => void }) {
+  const cur = steps[current];
+  return (
+    <section className="journey" aria-label="Compliance journey">
+      <ol>
+        {steps.map((s, i) => (
+          <li key={s.key} className={`js-${s.state} ${i === current ? 'js-current' : ''}`}>
+            <button type="button" onClick={() => go(s.tab)} aria-current={i === current ? 'step' : undefined}>
+              <span className="js-n" aria-hidden="true">{s.state === 'done' ? '✓' : s.n}</span>
+              <span className="js-t"><b>{s.label}</b><small>{s.state === 'done' ? 'Complete' : s.state === 'progress' ? 'In progress' : 'Not started'}</small></span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      <p className="js-next">{cur
+        ? <><b>Step {cur.n} of 5, {cur.label.toLowerCase()}:</b> {cur.next} <span className="muted">({cur.detail})</span></>
+        : <><b>All five steps are complete.</b> Keep monitoring metrics and incidents, and confirm the classification again whenever the system changes.</>}</p>
+    </section>
+  );
+}
+
+/* ---------- Conformity assessment ---------- */
+function ConformityTab({ data, ro, mutate }: { data: AssessmentData; ro: boolean; mutate: (fn: (d: AssessmentData) => void) => void }) {
+  const qs = questionsFor(data), prog = confProgress(data), a43 = art43(data);
+  const [part, setPart] = useState<string>('org');
+  const set = (id: string, patch: { t?: string; ok?: boolean; from?: string }) => mutate(d => { d.conf = { ...(d.conf || {}), [id]: { ...(d.conf?.[id] || {}), ...patch } }; });
+  const confirmMany = (ids: string[]) => mutate(d => {
+    const next = { ...(d.conf || {}) };
+    for (const id of ids) { const q = qs.find(x => x.id === id)!; const st = answerState(d, q); if (st.state === 'review') next[id] = { t: st.text, ok: true, from: st.from }; }
+    d.conf = next;
+  });
+  const list = qs.filter(q => q.part === part);
+  const pending = list.filter(q => answerState(data, q).state === 'review').map(q => q.id);
+  return (
+    <>
+      <section className="panel"><div className="body">
+        <div className={`flag ${a43.required || a43.likely ? '' : 'flag-soft'}`}><b>{a43.required ? 'Article 43 conformity assessment required.' : a43.likely ? 'Article 43 conformity assessment likely required.' : 'Article 43.'}</b> {a43.text}</div>
+        <p className="muted" style={{ fontSize: 13 }}>Three parts: organisational, project and technical. Answers already recorded in the profile, classification, controls, model card and monitoring are filled in for you and marked <span className="pill t-info">Pre-filled</span>: check each one and confirm it. Answers stay editable, and every change is kept in the audit trail.</p>
+        <div className="conf-parts">
+          {prog.parts.map(x => (
+            <button type="button" key={x.key} className="conf-part" aria-pressed={part === x.key} onClick={() => setPart(x.key)}>
+              <b>{x.label}</b><span>{x.done}/{x.total} confirmed{x.review ? ` · ${x.review} to review` : ''}</span>
+              <span className="bar" aria-hidden="true"><i style={{ width: `${x.total ? x.done / x.total * 100 : 0}%` }} /></span>
+            </button>
+          ))}
+        </div>
+      </div></section>
+      <section className="panel">
+        <header><div><h3>{CONF_PARTS.find(x => x[0] === part)?.[1]} assessment</h3><small className="muted">{CONF_PARTS.find(x => x[0] === part)?.[2]}</small></div>
+          {!ro && pending.length > 1 && <><div className="spacer" /><button type="button" className="btn" onClick={() => confirmMany(pending)}>Confirm {pending.length} pre-filled answers</button></>}</header>
+        <div className="conf-list">
+          {list.map(q => {
+            const st = answerState(data, q);
+            return (
+              <div className="conf-q" key={q.id} id={`conf-${q.id}`}>
+                <div className="conf-h"><span className="mono muted">{q.id.slice(1)}</span><b>{q.topic}</b>
+                  {st.state === 'done' && <span className="pill t-good">Confirmed</span>}
+                  {st.state === 'review' && <span className="pill t-info" title="Taken from what is already recorded for this system">{st.from === 'Assessment agent' ? 'Proposed by the agent' : `Pre-filled from ${st.from || 'earlier steps'}`}: review</span>}
+                  <span className="ref">{q.ref}</span></div>
+                <p>{q.q}</p>
+                <Why text={q.why} />
+                <textarea id={`conf-t-${q.id}`} value={st.text} readOnly={ro} maxLength={CONF_MAX} rows={st.text.length > 300 ? 7 : 4}
+                  placeholder="Describe what is in place, with document names, owners and dates."
+                  onChange={e => set(q.id, { t: e.target.value, ok: !!e.target.value.trim(), from: undefined })} />
+                <div className="conf-f"><span className="muted mono">{st.text.length.toLocaleString('en-GB')} / {CONF_MAX.toLocaleString('en-GB')}</span>
+                  {!ro && st.state === 'review' && <button type="button" className="btn" onClick={() => set(q.id, { t: st.text, ok: true, from: st.from })}>Confirm</button>}
+                  {!ro && st.state === 'done' && data.conf?.[q.id]?.from && <button type="button" className="linkish" onClick={() => set(q.id, { ok: false })}>Mark for review</button>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
     </>
   );

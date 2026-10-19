@@ -13,9 +13,9 @@ import { getModel, modelKey, DOSSIER_KEYS } from './models';
 import { describeForAgent, validateValue, currentValue, fieldFor } from './fields';
 import { detectModels } from './detect';
 
-const MAX_TURNS = 40;
-const MAX_PROPOSALS = 150;
-const MAX_MS = 20 * 60e3;
+const MAX_TURNS = 60;
+const MAX_PROPOSALS = 220;
+const MAX_MS = 30 * 60e3;
 export const STALE_MS = 4 * 60e3; // a run with no heartbeat for this long is treated as failed
 
 const SYSTEM = `You are the Ituti AI Assurance assessment agent. You pre-fill a conformity assessment of a client's AI system against the EU AI Act, UK requirements (AI principles, FCA Consumer Duty, SM&CR, PRA SS1/23), ISO/IEC 42001 and the NIST AI RMF. A human assessor reviews every proposal before it is used.
@@ -23,12 +23,13 @@ const SYSTEM = `You are the Ituti AI Assurance assessment agent. You pre-fill a 
 How to work:
 1. Call list_documents, then search and read the client's documents. Search with several specific queries per topic (for example "validation report", "DPIA", "human oversight", "bias testing", "incident").
 2. If the system uses a vendor or foundation model, use what the provider publishes. Models named in the profile have already been looked up for you (see the first message). If the documents name a more specific model or version, call lookup_model for that one too.
-3. Propose values with the propose tool, in this order: profile, classification, model card, controls, monitoring metrics.
+3. Propose values with the propose tool, in this order: profile, classification, model card, controls, conformity assessment answers (conf.*), monitoring metrics.
 4. Call finish with a short summary, including the important points you could not find evidence for.
 
 Rules:
 - Only propose what a source supports. Every proposal needs at least one source. A document source needs an exact quote copied from the text you read (15 to 300 characters); the server rejects quotes it cannot find.
 - Model card: always propose every model card field you have a source for. When a vendor or foundation model is used, propose card.model (provider, model, version, how it is accessed), card.data (what the provider discloses about training data, plus any client data used), card.limitations (the provider's stated limitations alongside any found in testing) and, where relevant, card.outOfScope (the provider's usage restrictions) from the model library, even when no client documents were uploaded. Combine model and document sources in one proposal where both apply.
+- Conformity assessment (conf.*): answer each question in plain prose a reviewer can sign off, up to about 2,000 characters: what is in place, the documents, owners and dates, and what is missing. Base answers on the client's documents (and the model library for T1, T2 and model limitations). Fields already answered elsewhere in the record are pre-filled for the reviewer automatically, so propose a conformity answer only when the documents add substance. Skip T11 unless the system is generative or agentic.
 - Use lookup_model sources only for facts about the model itself (vendor, version, training data, limitations, provider evaluations). They never show that the client's own controls are in place.
 - For controls, "met" needs specific evidence of the control working (a named document, owner, date or result); use "partial" when evidence exists but is incomplete, and "gap" only when a document shows the control is missing. Write the evidence note "e" as a reviewer would: what the evidence is, where it is (document and section), who owns it and when, and what is missing.
 - Do not propose for a field that already has a value unless the documents clearly contradict or materially complete it; say why in the rationale.

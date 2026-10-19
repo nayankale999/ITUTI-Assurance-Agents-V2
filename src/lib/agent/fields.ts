@@ -6,10 +6,12 @@
  *   cls.a3.<area>, cls.t.<k>   true | false                     Annex III areas, transparency triggers
  *   ctrl.<CONTROL-ID>          { s: 'met'|'partial'|'gap'|'na', e: evidence text }
  *   card.<key>                 text                             model card
+ *   conf.<QUESTION-ID>         text                             conformity assessment answer (O1-O5, P1-P18, T1-T15)
  *   metric.<name>              { kind, threshold, dir, readings: [{ d: 'YYYY-MM-DD', v: number }] }
  */
 import { OPTS, PROFILE_SECTIONS, PROHIBITED, ANNEX3, TRANSPARENCY, CONTROLS, AREAS, applicable, type AssessmentData, type Metric } from '../assurance';
 import { CARD_FIELDS } from '../report';
+import { CONF_QUESTIONS, CONF_MAX } from '../conformity';
 
 export type FieldKind = 'text' | 'select' | 'multi' | 'yn' | 'ynu' | 'bool' | 'control' | 'metric';
 export type Field = { path: string; label: string; section: string; kind: FieldKind; opts?: [string, string][]; help?: string };
@@ -17,7 +19,7 @@ export type Field = { path: string; label: string; section: string; kind: FieldK
 const YN: [string, string][] = [['no', 'No'], ['yes', 'Yes']];
 const YNU: [string, string][] = [['no', 'No'], ['yes', 'Yes'], ['unsure', 'Unsure']];
 
-export const SECTION_LABEL: Record<string, string> = { profile: 'Profile', cls: 'Classification', ctrl: 'Controls', card: 'Model card', metric: 'Monitoring' };
+export const SECTION_LABEL: Record<string, string> = { profile: 'Profile', cls: 'Classification', ctrl: 'Controls', card: 'Model card', conf: 'Conformity assessment', metric: 'Monitoring' };
 
 export function fieldCatalogue(): Field[] {
   const out: Field[] = [];
@@ -34,6 +36,8 @@ export function fieldCatalogue(): Field[] {
   const area = Object.fromEntries(AREAS);
   for (const c of CONTROLS) out.push({ path: `ctrl.${c.id}`, label: `${c.id} (${area[c.a]}): ${c.q}`, section: 'ctrl', kind: 'control', help: `Expected evidence: ${c.ev}` });
   for (const [k, l] of CARD_FIELDS) out.push({ path: `card.${k}`, label: `Model card: ${l}`, section: 'card', kind: 'text' });
+  const part = { org: 'Organisational', project: 'Project', tech: 'Technical' };
+  for (const q of CONF_QUESTIONS) out.push({ path: `conf.${q.id}`, label: `Conformity ${q.id} (${part[q.part]}, ${q.topic}): ${q.q}`, section: 'conf', kind: 'text', help: `${q.ref}${q.genai ? '; only for generative or agentic systems' : ''}` });
   return out;
 }
 
@@ -55,7 +59,7 @@ export function validateValue(path: string, value: unknown): { ok: true; value: 
   switch (f.kind) {
     case 'text':
       if (typeof value !== 'string' || !value.trim()) return { ok: false, error: `${path} needs non-empty text.` };
-      return { ok: true, value: clip(value.trim(), 5000) };
+      return { ok: true, value: clip(value.trim(), path.startsWith('conf.') ? CONF_MAX : 5000) };
     case 'select':
       if (typeof value !== 'string' || !keys.includes(value)) return { ok: false, error: `${path} must be one of: ${keys.join(', ')}.` };
       return { ok: true, value };
@@ -99,6 +103,7 @@ export function currentValue(data: AssessmentData, path: string): unknown {
   const [head, ...rest] = path.split('.');
   if (head === 'metric') return (data.metrics || []).find(m => m.name === rest.join('.'));
   if (head === 'ctrl') { const c = data.ctrl?.[rest.join('.')]; return c && (c.s || c.e) ? c : undefined; }
+  if (head === 'conf') { const a = data.conf?.[rest.join('.')]; return a?.t?.trim() ? a.t : undefined; }
   let cur: any = (data as any)[head];
   for (const k of rest) cur = cur?.[k];
   if (cur === '' || cur == null || (Array.isArray(cur) && !cur.length) || cur === false) return undefined;
@@ -123,6 +128,8 @@ export function applyValue(data: AssessmentData, path: string, value: unknown): 
     return d;
   }
   if (head === 'ctrl') { d.ctrl = { ...(d.ctrl || {}), [rest.join('.')]: value as { s: string; e: string } }; return d; }
+  // Accepting a proposal is the person's review, so the answer counts as confirmed
+  if (head === 'conf') { d.conf = { ...(d.conf || {}), [rest.join('.')]: { t: String(value), ok: true, from: 'Assessment agent' } }; return d; }
   const root: any = ((d as any)[head] ||= {});
   let cur = root;
   for (const k of rest.slice(0, -1)) cur = cur[k] ||= {};

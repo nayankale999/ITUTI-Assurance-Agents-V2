@@ -105,7 +105,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--violet); outline
 /* Portfolio */
 .pf-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 .pf-head .titles { flex: 1; min-width: 240px; display: grid; gap: 4px; }
-.stats { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .stat { padding: 12px 16px; border-left: 1px solid var(--line); display: grid; gap: 2px; }
 .stat:first-child { border-left: 0; }
 .stat b { font-family: var(--f-display); font-size: 26px; font-weight: 800; color: var(--heading); font-variant-numeric: tabular-nums; line-height: 1.1; }
@@ -357,3 +357,58 @@ a { color: var(--violet); }
 .suggest { border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 10px; padding: 10px 12px; margin: -4px 0 14px; font-size: 13px; }
 .suggest-head { display: flex; gap: 8px; align-items: center; }
 .linkish { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+
+/* "Why we ask" notes */
+.why { font-size: 12.5px; margin-top: 4px; }
+.why summary { cursor: pointer; color: var(--muted); list-style: none; display: inline-flex; gap: 4px; align-items: center; }
+.why summary::-webkit-details-marker { display: none; }
+.why summary::before { content: "?"; display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--line-strong); font-size: 10px; font-weight: 700; }
+.why p { margin: 6px 0 0; padding: 8px 10px; background: var(--accent-soft); border-radius: 8px; color: var(--ink); max-width: 72ch; }
+
+/* Compliance journey */
+.journey { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin: 12px 0; }
+.journey ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.journey li button { width: 100%; display: flex; gap: 10px; align-items: center; text-align: left; background: none; border: 1px solid transparent; border-radius: 10px; padding: 8px; cursor: pointer; color: var(--ink); font: inherit; min-height: 44px; }
+.journey li button:hover { background: var(--sunk); }
+.journey .js-current button { border-color: var(--accent-hover); background: var(--accent-soft); }
+.js-n { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; border: 2px solid var(--line-strong); color: var(--muted); }
+.js-done .js-n { background: var(--good); border-color: var(--good); color: #fff; }
+.js-progress .js-n { border-color: var(--warn); color: var(--warn); }
+.js-t { display: grid; line-height: 1.25; } .js-t b { font-size: 13px; } .js-t small { color: var(--muted); font-size: 11.5px; }
+.js-next { margin: 10px 4px 2px; font-size: 13px; }
+@media (max-width: 760px) { .journey ol { grid-template-columns: 1fr; } }
+
+/* Conformity assessment */
+.flag-soft { background: var(--sunk); color: var(--ink); border-color: var(--line); }
+.conf-parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.conf-part { display: grid; gap: 4px; text-align: left; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); cursor: pointer; color: var(--ink); font: inherit; }
+.conf-part[aria-pressed="true"] { border-color: var(--accent-hover); box-shadow: 0 0 0 1px var(--accent-hover); }
+.conf-part span { font-size: 12.5px; color: var(--muted); }
+.conf-part .bar { display: block; height: 6px; background: var(--sunk); border-radius: 99px; overflow: hidden; } .conf-part .bar i { display: block; height: 100%; background: var(--good); }
+.conf-list { display: grid; }
+.conf-q { padding: 16px 20px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.conf-h { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .conf-h .ref { margin-left: auto; }
+.conf-q p { margin: 0; }
+.conf-q textarea { width: 100%; }
+.conf-f { display: flex; gap: 10px; align-items: center; justify-content: flex-end; }
+.conf-f .muted { margin-right: auto; font-size: 11.5px; }
+@media (max-width: 760px) { .conf-parts { grid-template-columns: 1fr; } }
+
+/* Inventory */
+.filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px 14px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.filters .field:first-child { grid-column: span 2; }
+@media (max-width: 520px) { .filters .field:first-child { grid-column: auto; } }
+.steps5 { display: flex; gap: 3px; } .steps5 i { width: 18px; height: 6px; border-radius: 3px; background: var(--sunk); border: 1px solid var(--line); }
+.steps5 i.on { background: var(--good); border-color: var(--good); }
+.dist { display: grid; gap: 8px; }
+.dist .row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: 13px; }
+.dist .track { height: 14px; background: var(--sunk); border-radius: 99px; overflow: hidden; }
+.dist .track i { display: block; height: 100%; border-radius: 99px; }
+.scale4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.scale4 div { border-radius: 8px; padding: 8px; font-size: 12px; text-align: center; }
+.big-num { font-size: 44px; font-weight: 800; line-height: 1; color: var(--heading); }
+.doclist { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 16px 20px; }
+.docitem { border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 6px; text-decoration: none; color: var(--ink); background: var(--surface); }
+.docitem:hover { border-color: var(--accent-hover); }
+.docitem b { color: var(--heading); } .docitem span { font-size: 13px; color: var(--muted); }
+@media print { .filters { display: none; } }

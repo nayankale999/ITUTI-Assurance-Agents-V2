@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import { db } from '@/data';
 import { orgForPage } from '@/lib/session';
-import { TIERS, OPTS } from '@/lib/assurance';
 import { ROLE_LABEL } from '@/lib/permissions';
 import { ActionForm, Submit } from '@/components/ActionForm';
 import { createSystem, renameOrg, setOrgAi, setOrgPlan, createOrgApiKey, revokeOrgApiKey } from '@/app/actions';
 import { PLAN_LABEL, monthUsage, FREE_RERUN_DAYS } from '@/lib/usage';
+import { inventory } from '@/lib/portfolio';
+import { InventoryTable } from '@/components/InventoryTable';
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -13,35 +14,28 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return { title: org?.name || 'Client' };
 }
 
-const tierPill = (t: string) => { const x = TIERS[t] || TIERS.unknown; return <span className={`pill t-${x.tone}`}>{x.label}</span>; };
-const fnLabel = (v: unknown) => (OPTS.func.find(o => o[0] === v) || [, ''])[1];
-const riskTone = (s: number) => s >= 75 ? 'crit' : s >= 50 ? 'warn' : s >= 25 ? 'info' : 'good';
 
 export default async function Portfolio({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { viewer, org, caps } = await orgForPage(slug);
-  const systems = await db.aiSystems.find({ orgId: org.id }, { orderBy: [['updatedAt', 'desc']] });
+  const rows = await inventory(org.id);
   const editable = caps.orgRole === 'CONTRIBUTOR'
     ? new Set((await db.systemAssignments.find({ userId: viewer.id })).map(a => a.systemId))
     : null;
-  const groups = new Map<string, typeof systems>();
-  for (const s of systems) {
-    const unit = String((s.data as { profile?: { client?: string } }).profile?.client || '') || 'No business unit set';
-    groups.set(unit, [...(groups.get(unit) || []), s]);
-  }
-  const high = systems.filter(s => s.tier === 'high').length;
-  const flagged = systems.filter(s => s.tier === 'prohibited' || s.tier === 'review').length;
-  const avg = systems.length ? Math.round(systems.reduce((a, s) => a + s.readiness, 0) / systems.length) : 0;
-  const inc = systems.reduce((a, s) => a + s.openIncidents, 0);
+  const high = rows.filter(s => s.tier === 'high').length;
+  const flagged = rows.filter(s => s.tier === 'prohibited' || s.tier === 'review').length;
+  const review = rows.filter(s => s.reassess.length).length;
+  const inc = rows.reduce((a, s) => a + s.openIncidents, 0);
+  const complete = rows.filter(s => s.stage === 5).length;
   const roleNote = caps.staff ? null : caps.orgRole ? `You are signed in as ${ROLE_LABEL[caps.orgRole].toLowerCase()}.` : null;
 
   return (
     <>
       <section className="pf-head" style={{ marginTop: 8 }}>
         <div className="titles">
-          <span className="eyebrow">AI system portfolio</span>
+          <span className="eyebrow">AI inventory</span>
           <h1>{org.name}</h1>
-          <p className="muted">Classify each AI system, assess it against the controls that apply, and keep its model card and monitoring in one record.{roleNote ? ` ${roleNote}` : ''}</p>
+          <p className="muted">One record of every AI system: who is responsible for it, what it is for, its EU AI Act risk tier and how far its assessment has got.{roleNote ? ` ${roleNote}` : ''}</p>
         </div>
         {caps.createSystems && (
           <ActionForm action={createSystem} className="formrow" style={{ alignItems: 'center' }}>
@@ -51,34 +45,20 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
           </ActionForm>
         )}
       </section>
-      <section className="stats" aria-label="Portfolio summary">
-        <div className="stat"><b>{systems.length}</b><span>AI systems</span></div>
+      <section className="stats" aria-label="Inventory summary">
+        <div className="stat"><b>{rows.length}</b><span>AI systems</span></div>
         <div className="stat"><b>{high}</b><span>High risk (EU AI Act)</span></div>
         <div className={`stat ${flagged ? 'alert' : ''}`}><b>{flagged}</b><span>Prohibited or needing legal review</span></div>
-        <div className="stat"><b>{avg}%</b><span>Average control readiness</span></div>
+        <div className={`stat ${review ? 'alert' : ''}`}><b>{review}</b><span>Flagged for reassessment</span></div>
+        <div className="stat"><b>{complete}</b><span>Compliance journey complete</span></div>
         <div className={`stat ${inc ? 'alert' : ''}`}><b>{inc}</b><span>Open incidents</span></div>
       </section>
-      <section className="panel">
-        {systems.length ? (
-          <div className="scroll"><table className="ledger">
-            <thead><tr><th>System</th><th>EU AI Act tier</th><th className="num">Inherent risk</th><th>Control readiness</th><th className="num">Open incidents</th><th>Updated</th></tr></thead>
-            <tbody>{[...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([unit, list]) => (
-              <GroupRows key={unit} unit={unit} rows={list.map(s => (
-                <tr key={s.id}>
-                  <td><Link href={`/o/${org.slug}/systems/${s.id}`} className="sysname" style={{ textDecoration: 'none', color: 'inherit' }}>{s.name}<small>{fnLabel((s.data as { profile?: { func?: string } }).profile?.func) || 'Function not set'}{editable && !editable.has(s.id) ? ' · read only' : ''}</small></Link></td>
-                  <td>{tierPill(s.tier)}</td>
-                  <td className="num">{s.riskScore != null ? <span className={`pill t-${riskTone(s.riskScore)}`}>{s.riskScore}</span> : <span className="muted">–</span>}</td>
-                  <td><div className="barwrap"><div className="bar"><i style={{ width: `${s.readiness}%` }} /></div>{s.readiness}%</div></td>
-                  <td className="num">{s.openIncidents ? <span className="pill t-warn">{s.openIncidents}</span> : <span className="muted">0</span>}</td>
-                  <td className="muted mono">{s.updatedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                </tr>
-              ))} />
-            ))}</tbody>
-          </table></div>
-        ) : (
-          <div className="empty"><h3>No AI systems recorded yet</h3><p>{caps.createSystems ? 'Add the first system above to classify it and start the assessment.' : 'Your organisation’s admin or Ituti assessor will add systems here.'}</p></div>
-        )}
-      </section>
+      {rows.length ? <>
+        <InventoryTable rows={rows} slug={org.slug} readOnly={editable ? rows.filter(r => !editable.has(r.id)).map(r => r.id) : null} />
+        <p className="muted" style={{ fontSize: 13 }}>Export: <Link href={`/o/${org.slug}/documents/inventory`}>AI inventory report (PDF)</Link> · <a href={`/o/${org.slug}/documents/inventory.csv`}>spreadsheet (CSV)</a></p>
+      </> : (
+        <section className="panel"><div className="empty"><h3>No AI systems recorded yet</h3><p>{caps.createSystems ? 'Add the first system above. A short guided profile puts it in the inventory with its risk tier.' : 'Your organisation’s admin or Ituti assessor will add systems here.'}</p></div></section>
+      )}
       {caps.staff && (
         <section className="panel"><header><h3>Client settings</h3></header><div className="body">
           <ActionForm action={renameOrg} className="formrow">
@@ -103,13 +83,6 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
       )}
     </>
   );
-}
-
-function GroupRows({ unit, rows }: { unit: string; rows: React.ReactNode[] }) {
-  return (<>
-    <tr className="group"><td colSpan={6}>{unit} · {rows.length}</td></tr>
-    {rows}
-  </>);
 }
 
 import { deleteOrg } from '@/app/actions';

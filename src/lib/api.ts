@@ -34,7 +34,25 @@ export async function loadSystem(viewer: Viewer, id: string) {
 
 /** Recomputes the open-incident count for a system. */
 export async function refreshIncidentCount(systemId: string) {
-  const open = await db.incidents.count({ systemId, status: { ne: 'closed' } });
+  const open = await db.incidents.count({ systemId, status: ['open', 'investigating', 'mitigated'] });
   await db.aiSystems.update({ id: systemId, openIncidents: { ne: open } }, { openIncidents: open });
   return open;
+}
+
+/** The client organisation for an API or download route, when the signed-in person may view it. */
+export async function orgForApi(slug: string) {
+  const v = await getViewer();
+  if (!v) return null;
+  const org = await db.organizations.first({ slug });
+  if (!org) return null;
+  const { capsFor } = await import('./session');
+  const caps = await capsFor(v, org.id);
+  return caps.view ? { viewer: v, org, caps } : null;
+}
+
+/** A CSV download; cells that could be read as formulas are neutralised. */
+export function csvResponse(filename: string, header: string[], rows: unknown[][]) {
+  const q = (x: unknown) => { let s = String(x ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return `"${s.replace(/"/g, '""')}"`; };
+  const body = [header, ...rows].map(r => r.map(q).join(',')).join('\r\n');
+  return new Response('﻿' + body, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${filename}"`, 'Cache-Control': 'no-store' } });
 }

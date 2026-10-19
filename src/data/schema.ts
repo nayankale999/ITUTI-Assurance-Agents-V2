@@ -71,6 +71,13 @@ export const MIGRATIONS: [string, string[]][] = [
     `CREATE TABLE IF NOT EXISTS registrations (id ${ID} PRIMARY KEY, email VARCHAR(255) NOT NULL, name VARCHAR(255) NOT NULL, orgName VARCHAR(255) NOT NULL,
       expiresAt ${AT}, completedAt ${AT_NULL}, orgId ${REF}, createdAt ${AT}, KEY ix_reg_email (email)) ${T}`,
   ]],
+  ['005_history_sharing', [
+    `CREATE TABLE IF NOT EXISTS system_changes (id ${ID} PRIMARY KEY, orgId ${ID}, systemId ${ID}, userId ${REF}, path VARCHAR(191) NOT NULL,
+      label VARCHAR(255) NOT NULL, \`before\` TEXT NULL, \`after\` TEXT NULL, via VARCHAR(16) NOT NULL, createdAt ${AT}, updatedAt ${AT},
+      KEY ix_chg_sys (systemId, updatedAt), KEY ix_chg_fold (systemId, userId, path, updatedAt)) ${T}`,
+    `CREATE TABLE IF NOT EXISTS share_links (id ${ID} PRIMARY KEY, orgId ${ID}, systemId ${ID}, kind VARCHAR(16) NOT NULL, tokenHash CHAR(64) NOT NULL,
+      createdById ${REF}, createdAt ${AT}, revokedAt ${AT_NULL}, lastViewedAt ${AT_NULL}, UNIQUE KEY uq_share_token (tokenHash), KEY ix_share_sys (systemId)) ${T}`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */

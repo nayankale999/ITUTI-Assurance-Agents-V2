@@ -59,6 +59,8 @@ export type ApiKey = { id: string; orgId: string; name: string; prefix: string; 
 export type UsageEvent = { id: string; orgId: string; kind: 'assessment'; systemId: string | null; runId: string | null; source: string; billable: boolean; plan: string; createdAt: Date; reportedAt: Date | null };
 export type A2ATaskRow = { id: string; orgId: string; contextId: string; task: unknown; createdAt: Date; updatedAt: Date };
 export type Registration = { id: string; email: string; name: string; orgName: string; expiresAt: Date; completedAt: Date | null; orgId: string | null; createdAt: Date };
+export type SystemChange = { id: string; orgId: string; systemId: string; userId: string | null; path: string; label: string; before: string | null; after: string | null; via: 'editor' | 'agent' | 'a2a'; createdAt: Date; updatedAt: Date };
+export type ShareLink = { id: string; orgId: string; systemId: string; kind: 'card'; tokenHash: string; createdById: string | null; createdAt: Date; revokedAt: Date | null; lastViewedAt: Date | null };
 export type A2AContextRow = { id: string; orgId: string; history: { role: 'user' | 'assistant'; text: string }[]; updatedAt: Date };
 
 const def = (name: string, key: string[], columns: Record<string, ColType>): TableDef => ({ name, key, columns });
@@ -101,6 +103,8 @@ export const DEFS = {
   a2aTasks: def('a2a_tasks', ['id'], { id: 'str', orgId: 'str', contextId: 'str', task: 'json', createdAt: 'date', updatedAt: 'date' }),
   a2aContexts: def('a2a_contexts', ['id'], { id: 'str', orgId: 'str', history: 'json', updatedAt: 'date' }),
   registrations: def('registrations', ['id'], { id: 'str', email: 'str', name: 'str', orgName: 'str', expiresAt: 'date', completedAt: 'date?', orgId: 'str?', createdAt: 'date' }),
+  changes: def('system_changes', ['id'], { id: 'str', orgId: 'str', systemId: 'str', userId: 'str?', path: 'str', label: 'str', before: 'str?', after: 'str?', via: 'str', createdAt: 'date', updatedAt: 'date' }),
+  shares: def('share_links', ['id'], { id: 'str', orgId: 'str', systemId: 'str', kind: 'str', tokenHash: 'str', createdById: 'str?', createdAt: 'date', revokedAt: 'date?', lastViewedAt: 'date?' }),
   proposals: def('proposals', ['id'], {
     id: 'str', runId: 'str', systemId: 'str', path: 'str', label: 'str', value: 'json', previous: 'json?', rationale: 'str', sources: 'json',
     confidence: 'str', status: 'str', decidedById: 'str?', decidedAt: 'date?', createdAt: 'date',
@@ -130,6 +134,8 @@ function makeDb(exec: () => import('mysql2/promise').Pool | PoolConnection, inTx
     a2aTasks: t<A2ATaskRow>(DEFS.a2aTasks, () => ({ createdAt: now(), updatedAt: now() })),
     a2aContexts: t<A2AContextRow>(DEFS.a2aContexts, () => ({ history: [], updatedAt: now() })),
     registrations: t<Registration>(DEFS.registrations, () => ({ ...withId(), completedAt: null, orgId: null })),
+    changes: t<SystemChange>(DEFS.changes, () => ({ ...withId(), updatedAt: now(), userId: null, before: null, after: null, via: 'editor' })),
+    shares: t<ShareLink>(DEFS.shares, () => ({ ...withId(), kind: 'card', createdById: null, revokedAt: null, lastViewedAt: null })),
     proposals: t<Proposal>(DEFS.proposals, () => ({ ...withId(), previous: null, status: 'pending', decidedById: null, decidedAt: null })),
   };
 }
@@ -161,6 +167,8 @@ export async function deleteSystems(ids: string[]) {
     await t.chunks.remove({ systemId: ids });
     await t.documents.remove({ systemId: ids });
     await t.proposals.remove({ systemId: ids });
+    await t.changes.remove({ systemId: ids });
+    await t.shares.remove({ systemId: ids });
     await t.agentRuns.remove({ systemId: ids });
     await t.aiSystems.remove({ id: ids });
   });
@@ -199,6 +207,8 @@ export async function deleteUser(userId: string) {
     await t.agentRuns.update({ startedById: userId }, { startedById: null });
     await t.apiKeys.update({ createdById: userId }, { createdById: null });
     await t.proposals.update({ decidedById: userId }, { decidedById: null });
+    await t.changes.update({ userId }, { userId: null });
+    await t.shares.update({ createdById: userId }, { createdById: null });
     await t.users.remove({ id: userId });
   });
 }

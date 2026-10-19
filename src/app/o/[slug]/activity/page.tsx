@@ -12,6 +12,8 @@ const ACTIONS: Record<string, string> = {
   'system.created': 'added a system', 'system.updated': 'updated a system', 'system.deleted': 'deleted a system',
   'incident.created': 'recorded an incident', 'incident.updated': 'updated an incident', 'incident.deleted': 'deleted an incident',
   'review.run': 'ran an AI evidence review',
+  'org.registered': 'signed up', 'share.created': 'created a public model card link', 'share.revoked': 'revoked a public model card link',
+  'proposals.accepted': 'accepted agent proposals', 'proposals.rejected': 'rejected agent proposals', 'agent.completed': 'agent run completed',
 };
 
 export default async function Activity({ params }: { params: Promise<{ slug: string }> }) {

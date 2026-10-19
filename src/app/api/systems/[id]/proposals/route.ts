@@ -4,6 +4,7 @@ import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
 import { validateValue, applyValue } from '@/lib/agent/fields';
 import { summarise } from '@/lib/summary';
 import { audit } from '@/lib/audit';
+import { recordChanges } from '@/lib/history';
 import type { AssessmentData } from '@/lib/assurance';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -27,6 +28,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const edited = parsed.data.value !== undefined;
   if (edited && ids.length !== 1) return err(400, 'Edit one proposal at a time.');
 
+  let before: AssessmentData | null = null;
   type Out = { conflict: { data: unknown; version: number } } | { error: string } | { data: AssessmentData; version: number; count: number };
   const out: Out = await db.tx(async t => {
     const sys = await t.aiSystems.first({ id }, { forUpdate: true });
@@ -40,6 +42,7 @@ export async function POST(req: Request, { params }: Ctx) {
       return { data: sys.data as AssessmentData, version: sys.version, count: props.length };
     }
     let data = sys.data as AssessmentData;
+    before = data;
     const prov = { ...(data.prov || {}) };
     for (const p of props) {
       let value = p.value;
@@ -61,5 +64,6 @@ export async function POST(req: Request, { params }: Ctx) {
   if ('conflict' in out) return json({ error: 'The system changed since you loaded it. Refresh and try again.', current: out.conflict }, 409);
   if ('error' in out) return err(400, out.error);
   await audit({ orgId: a.system.orgId, systemId: id, userId: v.id, action: action === 'accept' ? 'proposals.accepted' : 'proposals.rejected', detail: { count: out.count, edited } });
+  if (action === 'accept' && before) await recordChanges({ orgId: a.system.orgId, systemId: id, userId: v.id, via: 'agent', before, after: out.data });
   return json(out);
 }

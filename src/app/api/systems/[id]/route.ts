@@ -4,6 +4,7 @@ import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
 import { assessmentSchema } from '@/lib/validate';
 import { summarise } from '@/lib/summary';
 import { audit } from '@/lib/audit';
+import { recordChanges } from '@/lib/history';
 import type { AssessmentData } from '@/lib/assurance';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -32,6 +33,9 @@ export async function PUT(req: Request, { params }: Ctx) {
   if (!Number.isInteger(version)) return err(400, 'Missing version.');
   const data = parsed.data as AssessmentData;
   const prev = a.system.data as Record<string, unknown>;
+  // The person who confirmed the classification is recorded by the server, not taken from the browser
+  const prevOk = (prev as AssessmentData).clsOk;
+  if (data.clsOk) data.clsOk = { ...data.clsOk, u: prevOk && prevOk.at === data.clsOk.at && prevOk.snap === data.clsOk.snap ? prevOk.u : v.id };
   const sections = Object.keys({ ...prev, ...data }).filter(k => JSON.stringify(prev[k]) !== JSON.stringify((data as Record<string, unknown>)[k]));
   // Saves only if nobody else has saved since this editor loaded the record
   const outcome = await saveSystemData(id, v.id, () => data, version);
@@ -39,6 +43,7 @@ export async function PUT(req: Request, { params }: Ctx) {
   if ('conflict' in outcome) return json({ error: 'Someone else saved a newer version of this system.', current: { data: outcome.conflict.data, version: outcome.conflict.version } }, 409);
   const row = outcome.saved;
   if (sections.length) await audit({ orgId: a.system.orgId, systemId: id, userId: v.id, action: 'system.updated', detail: { sections } });
+  await recordChanges({ orgId: a.system.orgId, systemId: id, userId: v.id, via: 'editor', before: prev as AssessmentData, after: data });
   return json({ version: row.version, updatedAt: row.updatedAt });
 }
 

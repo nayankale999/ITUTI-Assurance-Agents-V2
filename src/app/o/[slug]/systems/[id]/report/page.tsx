@@ -5,6 +5,7 @@ import { requireViewer, systemAccess } from '@/lib/session';
 import { PROFILE_SECTIONS, OPTS, AREAS, TIERS, classify, obligations, applicable, inherentRisk, readiness, frameworkCoverage, metricStatus, type AssessmentData } from '@/lib/assurance';
 import { residualText } from '@/lib/report';
 import { PrintButton } from '@/components/PrintButton';
+import { isActive } from '@/lib/incidents';
 import { currentValue, displayValue, fieldFor } from '@/lib/agent/fields';
 
 export const metadata = { title: 'Assurance report' };
@@ -40,7 +41,7 @@ export default async function Report({ params }: { params: Promise<{ slug: strin
           <tr><th>EU AI Act classification</th><td><Tag tone={tier.tone}>{tier.label}</Tag></td></tr>
           <tr><th>Inherent risk</th><td>{ir ? <>{ir.score}/100 <Tag tone={ir.tone}>{ir.band}</Tag></> : 'Not scored'}</td></tr>
           <tr><th>Control readiness</th><td>{rd.pct}% ({rd.met} met, {rd.partial} partial, {rd.gap} not met, {rd.open} open, of {list.length} applicable)</td></tr>
-          <tr><th>Open incidents</th><td>{incidents.filter(i => i.status !== 'closed').length}</td></tr>
+          <tr><th>Open incidents</th><td>{incidents.filter(i => isActive(i.status)).length}</td></tr>
           <tr><th>Position</th><td>{residualText(ir, rd.pct)}</td></tr>
         </tbody></table>
         <h2>System profile</h2>

@@ -297,6 +297,35 @@ async function main() {
       await fetch(boss.url, { redirect: 'manual' });
       check('bootstrap admin becomes an Ituti admin on first sign-in', (await db.users.first({ email: 'boss@itutitech.test' }))?.role === 'ITUTI_ADMIN');
     }
+    // ---------- Inventory, risk, incidents and documents ----------
+    for (const path of ['', '/risk', '/incidents', '/documents', '/documents/inventory', '/documents/risk', '/documents/incidents']) {
+      check(`viewer opens ${path || 'the inventory'}`, (await get(`/o/${orgA.slug}${path}`, c.viewer)).status === 200);
+    }
+    check('another client cannot open the risk page', (await get(`/o/${orgA.slug}/risk`, c.other)).status === 404);
+    const invCsv = await get(`/o/${orgA.slug}/documents/inventory.csv`, c.viewer);
+    check('inventory exports as CSV', invCsv.status === 200 && (await invCsv.text()).includes('Responsible person'));
+    check('another client cannot export the inventory', (await get(`/o/${orgA.slug}/documents/inventory.csv`, c.other)).status === 404);
+    check('incidents export as CSV', (await get(`/o/${orgA.slug}/documents/incidents.csv`, c.viewer)).status === 200);
+    for (const doc of ['documents', 'overview', 'conformity', 'technical', 'audit', 'incidents', 'metrics']) {
+      check(`viewer opens the system ${doc} page`, (await get(`/o/${orgA.slug}/systems/${s1.id}/${doc}`, c.viewer)).status === 200);
+    }
+    check('another client cannot open a system document', (await get(`/o/${orgA.slug}/systems/${s1.id}/technical`, c.other)).status === 404);
+    check('saving records field-level history', (await db.changes.count({ systemId: s1.id })) > 0);
+    check('accepting agent proposals is recorded as agent-sourced history', !!(await db.changes.first({ systemId: s1.id, via: 'agent' })));
+    const audit = await (await get(`/o/${orgA.slug}/systems/${s1.id}/audit`, c.viewer)).text();
+    check('the audit trail shows who changed an answer', audit.includes('Agent proposal, accepted by a person'));
+    const shareToken = 'shr' + randomBytes(24).toString('hex');
+    const share = await db.shares.insert({ orgId: orgA.id, systemId: s1.id, kind: 'card', tokenHash: hashToken(shareToken), createdById: clientAdmin.id });
+    const pub = await fetch(`${BASE}/share/${shareToken}`);
+    const pubHtml = await pub.text();
+    check('a public model card link opens without signing in', pub.status === 200 && pubHtml.includes('MODEL CARD'));
+    check('the public page shows the card, not the controls', !pubHtml.includes('GOV-1') && !pubHtml.includes('Policy v2'));
+    await db.shares.update({ id: share.id }, { revokedAt: new Date() });
+    check('a revoked public link stops working', (await fetch(`${BASE}/share/${shareToken}`)).status === 404);
+    check('an unknown public link 404s', (await fetch(`${BASE}/share/${'x'.repeat(40)}`)).status === 404);
+    const resolved = await send(`/api/incidents/${irBody.incident.id}`, 'PATCH', c.assessorIn, { status: 'resolved' });
+    check('an incident can be marked resolved, which closes it in the counts', resolved.status === 200 && (await resolved.json()).open === 0);
+
     // Self-service sign-up
     check('the sign-up page loads', (await get('/register')).status === 200);
     check('a stranger without a sign-up gets no sign-in link', !(await signInRequest(`${tag}-stranger@newco.test`)).url);
