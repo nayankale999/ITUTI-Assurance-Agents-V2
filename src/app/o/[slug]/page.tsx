@@ -7,6 +7,7 @@ import { createSystem, renameOrg, setOrgAi, setOrgPlan, createOrgApiKey, revokeO
 import { PLAN_LABEL, monthUsage, FREE_RERUN_DAYS } from '@/lib/usage';
 import { inventory } from '@/lib/portfolio';
 import { InventoryTable } from '@/components/InventoryTable';
+import { ResumeBanner } from '@/components/ResumeBanner';
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -45,6 +46,7 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
           </ActionForm>
         )}
       </section>
+      <ResumeBanner slug={org.slug} systemIds={rows.map(r => r.id)} />
       <section className="stats" aria-label="Inventory summary">
         <div className="stat"><b>{rows.length}</b><span>AI systems</span></div>
         <div className="stat"><b>{high}</b><span>High risk (EU AI Act)</span></div>

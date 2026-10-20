@@ -6,6 +6,7 @@ import { TopBar } from '@/components/TopBar';
 import { SiteFoot } from '@/components/Brand';
 import { ActionForm, Submit } from '@/components/ActionForm';
 import { createOrg } from '@/app/actions';
+import { ResumeBanner } from '@/components/ResumeBanner';
 
 export const metadata = { title: 'Clients' };
 
@@ -15,7 +16,8 @@ export default async function AdminHome() {
   const orgs = await visibleOrgs(viewer);
   const ids = new Set(orgs.map(o => o.id));
   const by = new Map<string, { orgId: string; systems: number; high: number; flagged: number; readiness: number; incidents: number }>();
-  for (const s of await db.aiSystems.find({ orgId: [...ids] }, { columns: ['orgId', 'readiness', 'openIncidents', 'tier'] })) {
+  const sysRows = ids.size ? await db.aiSystems.find({ orgId: [...ids] }, { columns: ['id', 'orgId', 'readiness', 'openIncidents', 'tier'] }) : [];
+  for (const s of sysRows) {
     const e = by.get(s.orgId) || { orgId: s.orgId, systems: 0, high: 0, flagged: 0, readiness: 0, incidents: 0 };
     e.systems++; e.readiness += s.readiness; e.incidents += s.openIncidents;
     if (s.tier === 'high') e.high++;
@@ -38,6 +40,7 @@ export default async function AdminHome() {
             <p className="muted">Each client has its own workspace, members and AI system records.</p>
           </div>
         </section>
+        <ResumeBanner systemIds={sysRows.map(s => s.id)} />
         <section className="stats" aria-label="Summary">
           <div className="stat"><b>{orgs.length}</b><span>Clients</span></div>
           <div className="stat"><b>{totals.systems}</b><span>AI systems</span></div>

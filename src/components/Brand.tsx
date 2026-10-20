@@ -1,14 +1,14 @@
-import Link from 'next/link';
+import { HomeLink } from './HomeLink';
 
 export const SITE_URL = 'https://www.ituti.tech';
 
 export function Brand() {
   return (
-    <Link className="brand" href="/" aria-label="Ituti AI Assurance home">
+    <HomeLink>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/ituti-icon.svg" alt="" width={23} height={34} />
       <span style={{ display: 'grid', textAlign: 'left', lineHeight: 1.15 }}><b>ITUTI<i>.</i></b><span className="sub">AI Assurance</span></span>
-    </Link>
+    </HomeLink>
   );
 }
 

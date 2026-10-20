@@ -10,6 +10,7 @@ import {
 import { CARD_FIELDS, cardValue, residualText } from '@/lib/report';
 import { AgentPanel } from './AgentPanel';
 import { useCardProposals, SuggestionBox } from './CardSuggestions';
+import { remember, placeFor, onLeave } from '@/lib/resume';
 import { journey, reassessment, regulatoryScore, contextSnapshot } from '@/lib/journey';
 import { CONF_PARTS, CONF_MAX, questionsFor, answerState, confProgress, art43 } from '@/lib/conformity';
 import { INCIDENT_STATUSES, INCIDENT_CATEGORIES, SEVERITIES, sevTone, legalReview, isActive } from '@/lib/incidents';
@@ -80,7 +81,11 @@ export function SystemEditor(props: Props) {
   const router = useRouter();
   const [data, setData] = useState<AssessmentData>(props.system.data);
   const fresh = !Object.keys(props.system.data.profile || {}).some(k => k !== 'name' && k !== 'regions' && k !== 'role' && k !== 'aiType');
-  const [tab, setTab] = useState<Tab>(TABS.some(t => t[0] === props.initialTab) ? props.initialTab as Tab : fresh && canEdit ? 'agent' : 'profile');
+  const isTab = (t?: string): t is Tab => TABS.some(x => x[0] === t);
+  // Open where the person left off: the tab in the link, else the tab they last used on this system
+  const [tab, setTabState] = useState<Tab>(() => isTab(props.initialTab) ? props.initialTab : fresh && canEdit ? 'agent' : 'profile');
+  const [part, setPart] = useState<string>('org');
+  const restored = useRef(false);
   const [pending, setPending] = useState(0);
   const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle');
   const [saveMsg, setSaveMsg] = useState('');
@@ -119,9 +124,48 @@ export function SystemEditor(props: Props) {
     if (again.current) { again.current = false; return flush(); }
     return true;
   }, [flush]);
+  // Save pending edits before the app navigates away (the logo waits for this), and if the page is closed or the
+  // editor unmounts with an edit still waiting, send it with keepalive so it is not lost.
+  useEffect(() => onLeave(settle), [settle]);
+  useEffect(() => {
+    const sendNow = () => {
+      if (!timer.current || ro || conflictRef.current) return;
+      clearTimeout(timer.current); timer.current = null;
+      fetch(`/api/systems/${props.system.id}`, { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: latest.current, version: version.current }) }).catch(() => {});
+    };
+    window.addEventListener('pagehide', sendNow);
+    return () => { window.removeEventListener('pagehide', sendNow); sendNow(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const onApplied = useCallback((d: AssessmentData, v: number) => {
     version.current = v; latest.current = d; setData(d); setSaveState('saved'); setSaveMsg('');
   }, []);
+
+  // Restore the last tab, conformity part and scroll position for this system (once, after mounting)
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    const pl = placeFor(props.system.id);
+    if (!pl) return;
+    if (!isTab(props.initialTab) && isTab(pl.tab)) setTabState(pl.tab);
+    if (pl.part) setPart(pl.part);
+    if (pl.scroll && (!props.initialTab || props.initialTab === pl.tab)) setTimeout(() => window.scrollTo(0, pl.scroll!), 60);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const setTab = useCallback((t: Tab) => { setTabState(t); window.scrollTo(0, 0); }, []);
+  // Keep the address and the remembered place in step with what is on screen
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('tab') !== tab) { url.searchParams.set('tab', tab); window.history.replaceState(window.history.state, '', url); }
+    remember({ slug: org.slug, systemId: props.system.id, name: String(data.profile?.name || 'Untitled system'), tab, part, scroll: 0 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, part]);
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const onScroll = () => { if (t) return; t = setTimeout(() => { t = null; remember({ slug: org.slug, systemId: props.system.id, name: String(latest.current.profile?.name || 'Untitled system'), tab, part, scroll: Math.round(window.scrollY) }); }, 400); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); if (t) clearTimeout(t); };
+  }, [tab, part, org.slug, props.system.id]);
 
   const mutate = useCallback((fn: (d: AssessmentData) => void) => {
     if (ro) return;
@@ -240,11 +284,11 @@ export function SystemEditor(props: Props) {
         </div>
       </section>
 
-      <Journey steps={jr.steps} current={jr.current} go={t => { setTab(t as Tab); window.scrollTo(0, 0); }} />
+      <Journey steps={jr.steps} current={jr.current} go={t => setTab(t as Tab)} />
 
       <nav className="tabs" role="tablist">
         {TABS.map(([k, l], i) => (
-          <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => { setTab(k); window.scrollTo(0, 0); }}>
+          <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
             <span className="mono">{i + 1}</span>{l}{k === 'agent' ? (pending ? <span className="pill t-info count">{pending}</span> : null) : k !== 'report' && <span className={`dot ${done[k] ? 'done' : ''}`} />}
           </button>
         ))}
@@ -254,13 +298,13 @@ export function SystemEditor(props: Props) {
         version={() => version.current} beforeDecide={settle} onApplied={onApplied} onPending={setPending} />}
       {tab === 'profile' && <ProfileTab p={p} ro={ro} setProfile={setProfile} toggleProfile={toggleProfile} next={() => setTab('classify')} />}
       {tab === 'classify' && <ClassifyTab data={data} ro={ro} setCls={setCls} toggleClsObj={toggleClsObj} confirm={confirmCls} next={() => setTab('controls')} />}
-      {tab === 'conformity' && <ConformityTab data={data} ro={ro} mutate={mutate} />}
+      {tab === 'conformity' && <ConformityTab data={data} ro={ro} mutate={mutate} part={part} setPart={setPart} />}
       {tab === 'controls' && <ControlsTab data={data} ro={ro} setCtrl={setCtrl} filter={ctlFilter} setFilter={setCtlFilter} ai={ai} aiEnabled={aiEnabled} runReview={runReview} />}
       {tab === 'report' && <ReportTab data={data} incidents={incidents} reportHref={`/o/${org.slug}/systems/${props.system.id}/report`} />}
       {tab === 'card' && <CardTab data={data} ro={ro} mutate={mutate} cardHref={`/o/${org.slug}/systems/${props.system.id}/card`}
         systemId={props.system.id} canEdit={canEdit} version={() => version.current} beforeDecide={settle} onApplied={onApplied}
         onDecided={() => fetch(`/api/systems/${props.system.id}/agent`).then(r => r.json()).then(b => setPending((b.proposals || []).length)).catch(() => {})}
-        goAgent={() => { setTab('agent'); window.scrollTo(0, 0); }} />}
+        goAgent={() => setTab('agent')} />}
       {tab === 'monitor' && <MonitorTab data={data} ro={ro} mutate={mutate} systemId={props.system.id} incidents={incidents} setIncidents={setIncidents} armed={armed} setArmed={setArmed} />}
     </>
   );
@@ -675,9 +719,8 @@ function Journey({ steps, current, go }: { steps: ReturnType<typeof journey>['st
 }
 
 /* ---------- Conformity assessment ---------- */
-function ConformityTab({ data, ro, mutate }: { data: AssessmentData; ro: boolean; mutate: (fn: (d: AssessmentData) => void) => void }) {
+function ConformityTab({ data, ro, mutate, part, setPart }: { data: AssessmentData; ro: boolean; mutate: (fn: (d: AssessmentData) => void) => void; part: string; setPart: (p: string) => void }) {
   const qs = questionsFor(data), prog = confProgress(data), a43 = art43(data);
-  const [part, setPart] = useState<string>('org');
   const set = (id: string, patch: { t?: string; ok?: boolean; from?: string }) => mutate(d => { d.conf = { ...(d.conf || {}), [id]: { ...(d.conf?.[id] || {}), ...patch } }; });
   const confirmMany = (ids: string[]) => mutate(d => {
     const next = { ...(d.conf || {}) };
