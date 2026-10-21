@@ -5,6 +5,7 @@ import { validateValue, applyValue } from '@/lib/agent/fields';
 import { summarise } from '@/lib/summary';
 import { audit } from '@/lib/audit';
 import { recordChanges } from '@/lib/history';
+import { proposalAllowed } from '@/lib/tasks';
 import type { AssessmentData } from '@/lib/assurance';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -21,7 +22,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
-  if (!a.canEdit) return err(403, 'You cannot change this system.');
+  if (!a.canEdit && !a.scopes?.length) return err(403, 'You cannot change this system.');
   const parsed = body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return err(400, 'Invalid request.');
   const { action, ids, version } = parsed.data;
@@ -36,6 +37,7 @@ export async function POST(req: Request, { params }: Ctx) {
     if (sys.version !== version) return { conflict: { data: sys.data, version: sys.version } };
     const props = await t.proposals.find({ id: ids, systemId: id, status: 'pending' }, { forUpdate: true });
     if (!props.length) return { error: 'These proposals were already dealt with. Refresh to see the latest.' };
+    if (!a.canEdit && props.some(p => !proposalAllowed(a.scopes || [], p.path))) return { error: 'Some of these proposals are outside the tasks assigned to you.' };
     const now = new Date();
     if (action === 'reject') {
       await t.proposals.update({ id: props.map(p => p.id) }, { status: 'rejected', decidedById: v.id, decidedAt: now });

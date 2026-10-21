@@ -472,3 +472,16 @@ a { color: var(--violet); }
 @keyframes rb-hop { 0%, 80%, 100% { transform: translateY(0); } 88% { transform: translateY(-4px); } }
 @keyframes rb-z { 0% { opacity: 0; transform: translate(0, 4px); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(4px, -6px); } }
 @media (prefers-reduced-motion: reduce) { .robot * { animation: none !important; } }
+
+/* Teams and tasks */
+.team-form { display: grid; gap: 14px; }
+.pickset { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; }
+.pickset legend { font-weight: 600; font-size: 13px; padding: 0 4px; }
+.pick { display: inline-flex; gap: 6px; align-items: center; font-size: 13.5px; min-height: 32px; }
+.task-banner { border: 1px solid var(--accent-hover); background: var(--accent-soft); border-radius: 12px; padding: 12px 16px; margin: 12px 0; font-size: 13.5px; }
+.task-banner ul { margin: 6px 0 0; padding-left: 18px; }
+.task-banner button { margin-left: 4px; }
+.locked { opacity: .55; }
+.assigned-mark { display: inline-block; font-size: 11px; font-weight: 700; color: var(--accent-hover); background: var(--accent-soft); border-radius: 999px; padding: 1px 8px; margin-left: 6px; }
+.team-list { margin: 0; padding-left: 18px; }
+.assign-form { display: grid; gap: 12px; }

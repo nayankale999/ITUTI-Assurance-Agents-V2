@@ -12,7 +12,7 @@ async function load(req: Request, id: string) {
   if (!inc) return { error: err(404, 'Not found.') };
   const a = await loadSystem(v, inc.systemId);
   if (!a) return { error: err(404, 'Not found.') };
-  if (!a.canEdit) return { error: err(403, 'You cannot change incidents for this system.') };
+  if (!a.canEdit && !a.scopes?.includes('monitor')) return { error: err(403, 'You cannot change incidents for this system.') };
   return { v, inc, a };
 }
 

@@ -84,3 +84,20 @@ test('new assessment fields pass the save schema', () => {
   const ok = assessmentSchema.safeParse({ ...hr, conf: { P1: { t: 'x', ok: true, from: 'Profile' } }, clsOk: { at: '2026-10-01T00:00:00Z', snap: contextSnapshot(hr) }, cls: { ...hr.cls, tNone: 'yes' } });
   assert.ok(ok.success, JSON.stringify(ok.error?.issues));
 });
+
+test('task scopes unlock exactly the fields they cover', async () => {
+  const { pathAllowed, proposalAllowed, scopeOptions, scopeTab } = await import('../src/lib/tasks');
+  assert.equal(pathAllowed(['ctrl:GOV-1'], 'ctrl.GOV-1'), true);
+  assert.equal(pathAllowed(['ctrl:GOV-1'], 'ctrl.GOV-2'), false);
+  assert.equal(pathAllowed(['ctrlArea:gov'], 'ctrl.GOV-2'), true);
+  assert.equal(pathAllowed(['ctrlArea:gov'], 'ctrl.TEC-1'), false);
+  assert.equal(pathAllowed(['confPart:project'], 'conf.P7'), true);
+  assert.equal(pathAllowed(['confPart:project'], 'conf.T7'), false);
+  assert.equal(pathAllowed(['classify'], 'clsOk'), true);
+  assert.equal(pathAllowed(['monitor'], 'metric.AUC'), true);
+  assert.equal(pathAllowed(['card'], 'profile.name'), false);
+  assert.equal(proposalAllowed(['review'], 'profile.name'), true);
+  assert.equal(new Set(scopeOptions().map(o => o[0])).size, scopeOptions().length);
+  assert.equal(scopeTab('conf:P3'), 'conformity');
+  assert.equal(scopeTab('review'), 'agent');
+});

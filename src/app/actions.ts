@@ -245,6 +245,9 @@ export async function removeMember(_: ActionState, fd: FormData): Promise<Action
     await db.memberships.remove({ orgId, userId });
     const systems = (await db.aiSystems.find({ orgId }, { columns: ['id'] })).map(s => s.id);
     await db.systemAssignments.remove({ userId, systemId: systems });
+    const teams = (await db.teams.find({ orgId })).map(t => t.id);
+    if (teams.length) { await db.teamMembers.remove({ teamId: teams, userId }); await db.teams.update({ id: teams, leadId: userId }, { leadId: null }); }
+    await db.tasks.remove({ orgId, assigneeId: userId });
     await audit({ orgId, userId: v.id, action: 'member.removed', detail: { member: userId } });
     revalidatePath('/', 'layout');
     return { ok: 'Member removed.' };
@@ -362,5 +365,80 @@ export async function revokeShareLink(_: ActionState, fd: FormData): Promise<Act
     await audit({ orgId: a.org.id, systemId: a.system.id, userId: v.id, action: 'share.revoked', detail: { kind: 'model card' } });
     revalidatePath(`/o/${a.org.slug}/systems/${a.system.id}/documents`);
     return { ok: 'Link revoked.' };
+  } catch (e) { return fail(e); }
+}
+
+/* ---------- Teams ---------- */
+async function teamOrg(v: Viewer, orgId: string) {
+  if (!(await capsFor(v, orgId)).manage) throw new Error('Only client admins and Ituti staff can manage teams.');
+  const members = new Set((await db.memberships.find({ orgId })).map(m => m.userId));
+  const systems = new Set((await db.aiSystems.find({ orgId }, { columns: ['id'] })).map(s => s.id));
+  return { members, systems };
+}
+
+export async function createTeam(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    const orgId = String(fd.get('orgId') || '');
+    const { members } = await teamOrg(v, orgId);
+    const name = z.string().trim().min(2).max(120).parse(fd.get('name'));
+    const leadId = String(fd.get('leadId') || '') || null;
+    if (leadId && !members.has(leadId)) return { error: 'The team lead must be a member of this organisation.' };
+    if (await db.teams.first({ orgId, name })) return { error: 'A team with that name already exists.' };
+    const team = await db.teams.insert({ orgId, name, leadId });
+    if (leadId) await db.teamMembers.insert({ teamId: team.id, userId: leadId });
+    await audit({ orgId, userId: v.id, action: 'team.created', detail: { title: name } });
+    revalidatePath('/', 'layout');
+    return { ok: `Team “${name}” created. Add members and systems below.` };
+  } catch (e) {
+    if (e instanceof z.ZodError) return { error: 'Give the team a name of at least two characters.' };
+    return fail(e);
+  }
+}
+
+export async function updateTeam(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    const team = await db.teams.first({ id: String(fd.get('teamId') || '') });
+    if (!team) return { error: 'Team not found.' };
+    const { members, systems } = await teamOrg(v, team.orgId);
+    const leadId = String(fd.get('leadId') || '') || null;
+    const want = new Set(fd.getAll('member').map(String).filter(id => members.has(id)));
+    if (leadId) { if (!members.has(leadId)) return { error: 'The team lead must be a member of this organisation.' }; want.add(leadId); }
+    const sys = new Set(fd.getAll('system').map(String).filter(id => systems.has(id)));
+    const name = z.string().trim().min(2).max(120).parse(fd.get('name') || team.name);
+    await db.tx(async t => {
+      await t.teams.update({ id: team.id }, { name, leadId });
+      await t.teamMembers.remove({ teamId: team.id });
+      if (want.size) await t.teamMembers.insertMany([...want].map(userId => ({ teamId: team.id, userId })));
+      await t.teamSystems.remove({ teamId: team.id });
+      if (sys.size) await t.teamSystems.insertMany([...sys].map(systemId => ({ teamId: team.id, systemId })));
+      // Open tasks for people who left the team, or on systems the team no longer covers, are withdrawn
+      const open = await t.tasks.find({ teamId: team.id, status: ['todo', 'doing'] });
+      const gone = open.filter(x => !want.has(x.assigneeId) || !sys.has(x.systemId)).map(x => x.id);
+      if (gone.length) await t.tasks.remove({ id: gone });
+    });
+    await audit({ orgId: team.orgId, userId: v.id, action: 'team.updated', detail: { title: name } });
+    revalidatePath('/', 'layout');
+    return { ok: 'Team saved.' };
+  } catch (e) { return fail(e); }
+}
+
+export async function deleteTeam(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    const team = await db.teams.first({ id: String(fd.get('teamId') || '') });
+    if (!team) return { error: 'Team not found.' };
+    await teamOrg(v, team.orgId);
+    await db.tx(async t => {
+      await t.tasks.remove({ teamId: team.id, status: ['todo', 'doing'] });
+      await t.tasks.update({ teamId: team.id }, { teamId: null });
+      await t.teamMembers.remove({ teamId: team.id });
+      await t.teamSystems.remove({ teamId: team.id });
+      await t.teams.remove({ id: team.id });
+    });
+    await audit({ orgId: team.orgId, userId: v.id, action: 'team.deleted', detail: { title: team.name } });
+    revalidatePath('/', 'layout');
+    return { ok: 'Team deleted.' };
   } catch (e) { return fail(e); }
 }

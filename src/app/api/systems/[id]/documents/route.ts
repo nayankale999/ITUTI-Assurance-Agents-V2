@@ -21,7 +21,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
-  if (!a.canEdit) return err(403, 'You cannot add documents to this system.');
+  if (!a.canEdit && !a.scopes?.includes('evidence')) return err(403, 'You cannot add documents to this system.');
   if (Number(req.headers.get('content-length') || 0) > MAX_BYTES * 4 + 100_000) return err(413, 'Upload at most four files of 25 MB at a time.');
   let form: FormData;
   try { form = await req.formData(); } catch { return err(400, 'Send the files as a multipart form.'); }

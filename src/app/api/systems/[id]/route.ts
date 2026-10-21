@@ -4,7 +4,8 @@ import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
 import { assessmentSchema } from '@/lib/validate';
 import { summarise } from '@/lib/summary';
 import { audit } from '@/lib/audit';
-import { recordChanges } from '@/lib/history';
+import { recordChanges, diff } from '@/lib/history';
+import { pathAllowed, scopeLabel } from '@/lib/tasks';
 import type { AssessmentData } from '@/lib/assurance';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -22,7 +23,7 @@ export async function PUT(req: Request, { params }: Ctx) {
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
-  if (!a.canEdit) return err(403, 'You can view this system but not edit it.');
+  if (!a.canEdit && !a.scopes?.length) return err(403, 'You can view this system but not edit it.');
   const raw = await req.text();
   if (raw.length > MAX_BYTES) return err(413, 'This record is too large. Shorten some evidence entries.');
   let body: { data?: unknown; version?: unknown };
@@ -33,6 +34,13 @@ export async function PUT(req: Request, { params }: Ctx) {
   if (!Number.isInteger(version)) return err(400, 'Missing version.');
   const data = parsed.data as AssessmentData;
   const prev = a.system.data as Record<string, unknown>;
+  // Team members may change only the parts of the record their tasks cover
+  if (!a.canEdit) {
+    const scopes = a.scopes || [];
+    const outside = diff(prev as AssessmentData, data).map(d => d.path).filter(p => !pathAllowed(scopes, p));
+    const fixed = ['prov', 'aiReview'].filter(k => JSON.stringify(prev[k] ?? null) !== JSON.stringify((data as Record<string, unknown>)[k] ?? null));
+    if (outside.length || fixed.length) return err(403, `Your tasks on this system cover: ${scopes.map(scopeLabel).join('; ')}. Other changes were not saved.`);
+  }
   // The person who confirmed the classification is recorded by the server, not taken from the browser
   const prevOk = (prev as AssessmentData).clsOk;
   if (data.clsOk) data.clsOk = { ...data.clsOk, u: prevOk && prevOk.at === data.clsOk.at && prevOk.snap === data.clsOk.snap ? prevOk.u : v.id };

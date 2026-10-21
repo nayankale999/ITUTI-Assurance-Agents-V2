@@ -52,7 +52,19 @@ export async function systemAccess(viewer: Viewer, systemId: string) {
   const assigned = caps.orgRole === 'CONTRIBUTOR' && !!(await db.systemAssignments.first({ userId: viewer.id, systemId }));
   const org = await db.organizations.first({ id: system.orgId });
   if (!org) return null;
-  return { system, org, caps, canEdit: canEditSystem(caps, assigned) };
+  let canEdit = canEditSystem(caps, assigned);
+  // Teams: the lead of a team working on this system can edit all of it and hand out tasks; a member can change
+  // only what their open tasks cover (scopes). Anyone with full edit rights sees scopes = null.
+  const teamIds = (await db.teamSystems.find({ systemId })).map(t => t.teamId);
+  const teams = teamIds.length ? await db.teams.find({ id: teamIds }) : [];
+  const lead = teams.some(t => t.leadId === viewer.id);
+  if (lead) canEdit = true;
+  let scopes: string[] | null = null;
+  if (!canEdit) {
+    const tasks = await db.tasks.find({ systemId, assigneeId: viewer.id, status: ['todo', 'doing'] });
+    scopes = [...new Set(tasks.map(t => t.scope))];
+  }
+  return { system, org, caps, canEdit, lead, scopes, teams, canAllocate: caps.manage || lead };
 }
 
 /** Organisations the viewer can open, by name. */

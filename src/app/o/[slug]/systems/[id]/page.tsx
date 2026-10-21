@@ -12,9 +12,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: s?.name || 'AI system' };
 }
 
-export default async function SystemPage({ params, searchParams }: { params: Promise<{ slug: string; id: string }>; searchParams: Promise<{ tab?: string }> }) {
+export default async function SystemPage({ params, searchParams }: { params: Promise<{ slug: string; id: string }>; searchParams: Promise<{ tab?: string; task?: string }> }) {
   const { slug, id } = await params;
-  const { tab } = await searchParams;
+  const { tab, task } = await searchParams;
   const viewer = await requireViewer();
   const a = await systemAccess(viewer, id);
   if (!a || a.org.slug !== slug) notFound();
@@ -30,6 +30,9 @@ export default async function SystemPage({ params, searchParams }: { params: Pro
       aiBlockedReason={aiBlocked(a.org)}
       accept={ACCEPT_LIST}
       initialTab={tab}
+      focusTask={task}
+      scopes={a.scopes}
+      canAllocate={a.canAllocate}
       incidents={incidents.map(i => ({ id: i.id, title: i.title, date: i.date, severity: i.severity, category: i.category, status: i.status, serious: i.serious, notes: i.notes }))}
     />
   );

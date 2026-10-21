@@ -12,6 +12,8 @@ type Run = { id: string; status: 'queued' | 'running' | 'completed' | 'failed'; 
 type Props = {
   systemId: string;
   canEdit: boolean;
+  canUpload: boolean;
+  canDecide: (path: string) => boolean;
   aiEnabled: boolean;
   blockedReason: string | null;
   accept: string;
@@ -120,7 +122,7 @@ export function AgentPanel(props: Props) {
 
   const sections = ['All', ...[...new Set(proposals.map(p => p.section))]];
   const shown = proposals.filter(p => section === 'All' || p.section === section);
-  const highIds = shown.filter(p => p.confidence === 'high').map(p => p.id);
+  const highIds = shown.filter(p => p.confidence === 'high' && props.canDecide(p.path)).map(p => p.id);
   const ready = (docs || []).filter(d => d.status === 'ready').length;
 
   return (
@@ -131,7 +133,7 @@ export function AgentPanel(props: Props) {
       <section className="panel">
         <header><div><h3>Evidence documents</h3><small className="muted">Policies, design documents, validation and test reports, impact assessments, model cards, contracts, risk register exports. The agent reads these; they stay with this system.</small></div></header>
         <div className="body">
-          {canEdit && (
+          {props.canUpload && (
             <label
               className={`dropzone ${drag ? 'over' : ''}`}
               onDragOver={e => { e.preventDefault(); setDrag(true); }}
@@ -188,7 +190,7 @@ export function AgentPanel(props: Props) {
       <section className="panel">
         <header>
           <div><h3>Proposals to review{proposals.length ? ` (${proposals.length})` : ''}</h3><small className="muted">{decided ? `${decided} already reviewed. ` : ''}Check each source before accepting. Accepted answers are marked as agent-proposed in the report.</small></div>
-          {canEdit && highIds.length > 1 && <button className="btn" onClick={() => decide('accept', highIds)} disabled={!!busy}>Accept {highIds.length} high-confidence</button>}
+          {highIds.length > 1 && <button className="btn" onClick={() => decide('accept', highIds)} disabled={!!busy}>Accept {highIds.length} high-confidence</button>}
         </header>
         <div className="body">
           {proposals.length > 0 && (
@@ -224,7 +226,7 @@ export function AgentPanel(props: Props) {
                     {s.quote && <q>{s.quote}</q>}
                   </li>
                 ))}</ul>
-                {canEdit && (
+                {props.canDecide(p.path) && (
                   <div className="row-actions">
                     {editing === p.id ? (<>
                       <button className="btn primary" onClick={() => saveEdit(p)} disabled={!!busy}>Accept edited</button>

@@ -25,7 +25,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
-  if (!a.canEdit) return err(403, 'You cannot record incidents for this system.');
+  if (!a.canEdit && !a.scopes?.includes('monitor')) return err(403, 'You cannot record incidents for this system.');
   const parsed = incidentSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return err(400, 'Check the incident details.');
   const row = await db.incidents.insert({ ...parsed.data, systemId: id, createdById: v.id });

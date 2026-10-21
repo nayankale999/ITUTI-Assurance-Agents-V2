@@ -78,6 +78,14 @@ export const MIGRATIONS: [string, string[]][] = [
     `CREATE TABLE IF NOT EXISTS share_links (id ${ID} PRIMARY KEY, orgId ${ID}, systemId ${ID}, kind VARCHAR(16) NOT NULL, tokenHash CHAR(64) NOT NULL,
       createdById ${REF}, createdAt ${AT}, revokedAt ${AT_NULL}, lastViewedAt ${AT_NULL}, UNIQUE KEY uq_share_token (tokenHash), KEY ix_share_sys (systemId)) ${T}`,
   ]],
+  ['006_teams_tasks', [
+    `CREATE TABLE IF NOT EXISTS teams (id ${ID} PRIMARY KEY, orgId ${ID}, name VARCHAR(120) NOT NULL, leadId ${REF}, createdAt ${AT}, KEY ix_team_org (orgId)) ${T}`,
+    `CREATE TABLE IF NOT EXISTS team_members (teamId ${ID}, userId ${ID}, createdAt ${AT}, PRIMARY KEY (teamId, userId), KEY ix_tm_user (userId)) ${T}`,
+    `CREATE TABLE IF NOT EXISTS team_systems (teamId ${ID}, systemId ${ID}, createdAt ${AT}, PRIMARY KEY (teamId, systemId), KEY ix_ts_sys (systemId)) ${T}`,
+    `CREATE TABLE IF NOT EXISTS tasks (id ${ID} PRIMARY KEY, orgId ${ID}, systemId ${ID}, teamId ${REF}, assigneeId ${ID}, scope VARCHAR(64) NOT NULL,
+      status VARCHAR(16) NOT NULL, due VARCHAR(10) NULL, note TEXT NULL, createdById ${REF}, createdAt ${AT}, updatedAt ${AT}, doneAt ${AT_NULL},
+      KEY ix_task_sys (systemId), KEY ix_task_user (assigneeId, status), KEY ix_task_org (orgId)) ${T}`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */

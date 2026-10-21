@@ -61,6 +61,10 @@ export type A2ATaskRow = { id: string; orgId: string; contextId: string; task: u
 export type Registration = { id: string; email: string; name: string; orgName: string; expiresAt: Date; completedAt: Date | null; orgId: string | null; createdAt: Date };
 export type SystemChange = { id: string; orgId: string; systemId: string; userId: string | null; path: string; label: string; before: string | null; after: string | null; via: 'editor' | 'agent' | 'a2a'; createdAt: Date; updatedAt: Date };
 export type ShareLink = { id: string; orgId: string; systemId: string; kind: 'card'; tokenHash: string; createdById: string | null; createdAt: Date; revokedAt: Date | null; lastViewedAt: Date | null };
+export type Team = { id: string; orgId: string; name: string; leadId: string | null; createdAt: Date };
+export type TeamMember = { teamId: string; userId: string; createdAt: Date };
+export type TeamSystem = { teamId: string; systemId: string; createdAt: Date };
+export type TaskRow = { id: string; orgId: string; systemId: string; teamId: string | null; assigneeId: string; scope: string; status: 'todo' | 'doing' | 'done'; due: string | null; note: string | null; createdById: string | null; createdAt: Date; updatedAt: Date; doneAt: Date | null };
 export type A2AContextRow = { id: string; orgId: string; history: { role: 'user' | 'assistant'; text: string }[]; updatedAt: Date };
 
 const def = (name: string, key: string[], columns: Record<string, ColType>): TableDef => ({ name, key, columns });
@@ -105,6 +109,10 @@ export const DEFS = {
   registrations: def('registrations', ['id'], { id: 'str', email: 'str', name: 'str', orgName: 'str', expiresAt: 'date', completedAt: 'date?', orgId: 'str?', createdAt: 'date' }),
   changes: def('system_changes', ['id'], { id: 'str', orgId: 'str', systemId: 'str', userId: 'str?', path: 'str', label: 'str', before: 'str?', after: 'str?', via: 'str', createdAt: 'date', updatedAt: 'date' }),
   shares: def('share_links', ['id'], { id: 'str', orgId: 'str', systemId: 'str', kind: 'str', tokenHash: 'str', createdById: 'str?', createdAt: 'date', revokedAt: 'date?', lastViewedAt: 'date?' }),
+  teams: def('teams', ['id'], { id: 'str', orgId: 'str', name: 'str', leadId: 'str?', createdAt: 'date' }),
+  teamMembers: def('team_members', ['teamId', 'userId'], { teamId: 'str', userId: 'str', createdAt: 'date' }),
+  teamSystems: def('team_systems', ['teamId', 'systemId'], { teamId: 'str', systemId: 'str', createdAt: 'date' }),
+  tasks: def('tasks', ['id'], { id: 'str', orgId: 'str', systemId: 'str', teamId: 'str?', assigneeId: 'str', scope: 'str', status: 'str', due: 'str?', note: 'str?', createdById: 'str?', createdAt: 'date', updatedAt: 'date', doneAt: 'date?' }),
   proposals: def('proposals', ['id'], {
     id: 'str', runId: 'str', systemId: 'str', path: 'str', label: 'str', value: 'json', previous: 'json?', rationale: 'str', sources: 'json',
     confidence: 'str', status: 'str', decidedById: 'str?', decidedAt: 'date?', createdAt: 'date',
@@ -136,6 +144,10 @@ function makeDb(exec: () => import('mysql2/promise').Pool | PoolConnection, inTx
     registrations: t<Registration>(DEFS.registrations, () => ({ ...withId(), completedAt: null, orgId: null })),
     changes: t<SystemChange>(DEFS.changes, () => ({ ...withId(), updatedAt: now(), userId: null, before: null, after: null, via: 'editor' })),
     shares: t<ShareLink>(DEFS.shares, () => ({ ...withId(), kind: 'card', createdById: null, revokedAt: null, lastViewedAt: null })),
+    teams: t<Team>(DEFS.teams, () => ({ ...withId(), leadId: null })),
+    teamMembers: t<TeamMember>(DEFS.teamMembers, () => ({ createdAt: now() })),
+    teamSystems: t<TeamSystem>(DEFS.teamSystems, () => ({ createdAt: now() })),
+    tasks: t<TaskRow>(DEFS.tasks, () => ({ ...withId(), updatedAt: now(), teamId: null, status: 'todo', due: null, note: null, createdById: null, doneAt: null })),
     proposals: t<Proposal>(DEFS.proposals, () => ({ ...withId(), previous: null, status: 'pending', decidedById: null, decidedAt: null })),
   };
 }
@@ -168,6 +180,8 @@ export async function deleteSystems(ids: string[]) {
     await t.documents.remove({ systemId: ids });
     await t.proposals.remove({ systemId: ids });
     await t.changes.remove({ systemId: ids });
+    await t.tasks.remove({ systemId: ids });
+    await t.teamSystems.remove({ systemId: ids });
     await t.shares.remove({ systemId: ids });
     await t.agentRuns.remove({ systemId: ids });
     await t.aiSystems.remove({ id: ids });
@@ -188,6 +202,10 @@ export async function deleteOrg(orgId: string) {
     await t.a2aTasks.remove({ orgId });
     await t.a2aContexts.remove({ orgId });
     await t.registrations.update({ orgId }, { orgId: null });
+    const teamIds = (await t.teams.find({ orgId })).map(x => x.id);
+    if (teamIds.length) { await t.teamMembers.remove({ teamId: teamIds }); await t.teamSystems.remove({ teamId: teamIds }); }
+    await t.tasks.remove({ orgId });
+    await t.teams.remove({ orgId });
     await t.organizations.remove({ id: orgId });
   });
 }
@@ -208,6 +226,10 @@ export async function deleteUser(userId: string) {
     await t.apiKeys.update({ createdById: userId }, { createdById: null });
     await t.proposals.update({ decidedById: userId }, { decidedById: null });
     await t.changes.update({ userId }, { userId: null });
+    await t.teamMembers.remove({ userId });
+    await t.teams.update({ leadId: userId }, { leadId: null });
+    await t.tasks.remove({ assigneeId: userId });
+    await t.tasks.update({ createdById: userId }, { createdById: null });
     await t.shares.update({ createdById: userId }, { createdById: null });
     await t.users.remove({ id: userId });
   });

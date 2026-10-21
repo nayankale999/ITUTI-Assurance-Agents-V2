@@ -326,6 +326,43 @@ async function main() {
     const resolved = await send(`/api/incidents/${irBody.incident.id}`, 'PATCH', c.assessorIn, { status: 'resolved' });
     check('an incident can be marked resolved, which closes it in the counts', resolved.status === 200 && (await resolved.json()).open === 0);
 
+    // ---------- Teams and tasks ----------
+    const lead = await mk('lead@bank.test', 'CLIENT'), member = await mk('member@bank.test', 'CLIENT');
+    await db.memberships.insertMany([{ userId: lead.id, orgId: orgA.id, role: 'VIEWER' }, { userId: member.id, orgId: orgA.id, role: 'VIEWER' }]);
+    const team = await db.teams.insert({ orgId: orgA.id, name: 'HR assurance', leadId: lead.id });
+    await db.teamMembers.insertMany([{ teamId: team.id, userId: lead.id }, { teamId: team.id, userId: member.id }]);
+    await db.teamSystems.insert({ teamId: team.id, systemId: s1.id });
+    const cl = await sessionFor(lead.id), cm = await sessionFor(member.id);
+    check('client admin opens the Teams page', (await get(`/o/${orgA.slug}/teams`, c.clientAdmin)).status === 200);
+    check('a team member cannot open the Teams page', (await get(`/o/${orgA.slug}/teams`, cm)).status === 404);
+    check('team members open the Tasks page', (await get(`/o/${orgA.slug}/tasks`, cm)).status === 200);
+    check('a member cannot assign tasks', (await send(`/api/systems/${s1.id}/tasks`, 'POST', cm, { assigneeId: member.id, scopes: ['profile'] })).status === 403);
+    const asg = await send(`/api/systems/${s1.id}/tasks`, 'POST', cl, { assigneeId: member.id, scopes: ['ctrl:GOV-2', 'confPart:project'], due: '2026-12-01', note: 'Use the AI policy' });
+    const asgBody = await asg.json();
+    check('the team lead assigns tasks to a member', asg.status === 201 && asgBody.tasks?.length === 2, JSON.stringify(asgBody));
+    check('the assignee is emailed', logs.join('').includes(`To: ${member.email}`));
+    check('tasks cannot go to someone outside the team', (await send(`/api/systems/${s1.id}/tasks`, 'POST', cl, { assigneeId: viewer.id, scopes: ['profile'] })).status === 400);
+    const s3 = await db.aiSystems.insert({ orgId: orgA.id, name: 'Other', data: blank });
+    check('tasks cannot be given on a system the team does not cover', (await send(`/api/systems/${s3.id}/tasks`, 'POST', cl, { assigneeId: member.id, scopes: ['profile'] })).status === 403);
+    const cur = async () => { const r = await (await get(`/api/systems/${s1.id}`, c.clientAdmin)).json(); return { data: r.data, version: r.version }; };
+    let sv = await cur();
+    const mine = await send(`/api/systems/${s1.id}`, 'PUT', cm, { data: { ...sv.data, ctrl: { ...sv.data.ctrl, 'GOV-2': { s: 'partial', e: 'Policy approved, review overdue.' } }, conf: { ...(sv.data.conf || {}), P1: { t: 'Shortlisting support', ok: true } } }, version: sv.version });
+    check('a member saves the parts assigned to them', mine.status === 200, String(mine.status));
+    sv = await cur();
+    const outside = await send(`/api/systems/${s1.id}`, 'PUT', cm, { data: { ...sv.data, profile: { ...sv.data.profile, name: 'Renamed' } }, version: sv.version });
+    check('a member cannot change anything else', outside.status === 403);
+    check('a member cannot run the agent', (await send(`/api/systems/${s1.id}/agent`, 'POST', cm, {})).status === 403);
+    sv = await cur();
+    check('the team lead can edit the whole system', (await send(`/api/systems/${s1.id}`, 'PUT', cl, { data: { ...sv.data, profile: { ...sv.data.profile, team: 'HR assurance' } }, version: sv.version })).status === 200);
+    const done = await send(`/api/tasks/${asgBody.tasks[0].id}`, 'PATCH', cm, { status: 'done' });
+    check('a member marks their task done', done.status === 200 && (await done.json()).task.status === 'done');
+    check('a member cannot change the due date', (await send(`/api/tasks/${asgBody.tasks[1].id}`, 'PATCH', cm, { due: '2027-01-01' })).status === 403);
+    sv = await cur();
+    check('once done, the task no longer unlocks that control', (await send(`/api/systems/${s1.id}`, 'PUT', cm, { data: { ...sv.data, ctrl: { ...sv.data.ctrl, 'GOV-2': { s: 'met', e: 'Changed after done.' } } }, version: sv.version })).status === 403);
+    const sysPage = await (await get(`/o/${orgA.slug}/systems/${s1.id}`, cm)).text();
+    check('the system page shows the member their tasks', sysPage.includes('Your tasks on this system'));
+    check('another client cannot see the tasks', (await get(`/api/systems/${s1.id}/tasks`, c.other)).status === 404);
+
     // Self-service sign-up
     check('the sign-up page loads', (await get('/register')).status === 200);
     check('a stranger without a sign-up gets no sign-in link', !(await signInRequest(`${tag}-stranger@newco.test`)).url);

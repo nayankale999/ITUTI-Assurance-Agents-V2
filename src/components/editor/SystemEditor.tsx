@@ -11,6 +11,8 @@ import { CARD_FIELDS, cardValue, residualText } from '@/lib/report';
 import { AgentPanel } from './AgentPanel';
 import { useCardProposals, SuggestionBox } from './CardSuggestions';
 import { remember, placeFor, onLeave } from '@/lib/resume';
+import { pathAllowed, proposalAllowed, scopeLabel, scopeTab } from '@/lib/tasks';
+import { TeamTab } from './TeamTab';
 import { journey, reassessment, regulatoryScore, contextSnapshot } from '@/lib/journey';
 import { CONF_PARTS, CONF_MAX, questionsFor, answerState, confProgress, art43 } from '@/lib/conformity';
 import { INCIDENT_STATUSES, INCIDENT_CATEGORIES, SEVERITIES, sevTone, legalReview, isActive } from '@/lib/incidents';
@@ -26,9 +28,13 @@ type Props = {
   aiBlockedReason: string | null;
   accept: string;
   initialTab?: string;
+  /** null: full edit rights (or none, see canEdit); a list: the task scopes this person may change */
+  scopes: string[] | null;
+  canAllocate: boolean;
+  focusTask?: string;
 };
 
-const TABS = [['agent', 'Evidence and agent'], ['profile', 'Profile'], ['classify', 'Classification'], ['controls', 'Controls'], ['conformity', 'Conformity'], ['report', 'Report'], ['card', 'Model card'], ['monitor', 'Monitoring']] as const;
+const TABS = [['agent', 'Evidence and agent'], ['profile', 'Profile'], ['classify', 'Classification'], ['controls', 'Controls'], ['conformity', 'Conformity'], ['report', 'Report'], ['card', 'Model card'], ['monitor', 'Monitoring'], ['team', 'Team']] as const;
 type Tab = (typeof TABS)[number][0];
 const optLabel = (k: string, v: unknown) => (OPTS[k].find(o => o[0] === v) || [, ''])[1];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -77,7 +83,10 @@ function Refs({ k }: { k: Control }) {
 
 export function SystemEditor(props: Props) {
   const { org, canEdit, canDelete, aiEnabled } = props;
-  const ro = !canEdit;
+  // Team members with tasks can change only what their tasks cover; everything else stays read-only for them
+  const scopes = !canEdit && props.scopes?.length ? props.scopes : null;
+  const ro = !canEdit && !scopes;
+  const can = useCallback((path: string) => canEdit || (!!scopes && pathAllowed(scopes, path)), [canEdit, scopes]);
   const router = useRouter();
   const [data, setData] = useState<AssessmentData>(props.system.data);
   const fresh = !Object.keys(props.system.data.profile || {}).some(k => k !== 'name' && k !== 'regions' && k !== 'role' && k !== 'aiType');
@@ -92,7 +101,7 @@ export function SystemEditor(props: Props) {
   const [conflict, setConflict] = useState<{ data: AssessmentData; version: number } | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>(props.incidents);
   const [armed, setArmed] = useState<string | null>(null);
-  const [ctlFilter, setCtlFilter] = useState<'all' | 'open' | 'gaps'>('all');
+  const [ctlFilter, setCtlFilter] = useState<'all' | 'open' | 'gaps' | 'mine'>(() => !props.canEdit && props.scopes?.some(x => x.startsWith('ctrl') || x === 'controls') ? 'mine' : 'all');
   const [ai, setAi] = useState<{ running: boolean; error: string }>({ running: false, error: '' });
 
   const version = useRef(props.system.version);
@@ -153,6 +162,17 @@ export function SystemEditor(props: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const setTab = useCallback((t: Tab) => { setTabState(t); window.scrollTo(0, 0); }, []);
+  // Opened from a task: go to the exact control or conformity question
+  useEffect(() => {
+    const f = props.focusTask;
+    if (!f) return;
+    const [kind, key] = f.split(':');
+    if (kind === 'confPart') setPart(key);
+    if (kind === 'conf') setPart(({ O: 'org', P: 'project', T: 'tech' } as Record<string, string>)[key[0]] || 'org');
+    const id = kind === 'ctrl' ? `ctl-${key}` : kind === 'conf' ? `conf-${key}` : kind === 'ctrlArea' ? `area-${key}` : null;
+    if (id) setTimeout(() => document.getElementById(id)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 400);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Keep the address and the remembered place in step with what is on screen
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -244,6 +264,7 @@ export function SystemEditor(props: Props) {
     classify: cls.tier !== 'unknown',
     controls: rd.open === 0 && rd.den > 0,
     report: false,
+    team: false,
     card: !!data.card?.purpose,
     conformity: confProgress(data).pct === 100,
     monitor: !!data.metrics?.length,
@@ -269,6 +290,11 @@ export function SystemEditor(props: Props) {
           </div>
         )}
         {ro && <div className="readonly-note">You can view this system but not edit it. Ask your organisation&rsquo;s admin if you need edit access.</div>}
+        {scopes && (
+          <div className="task-banner" role="note"><b>Your tasks on this system.</b> You can change only these parts; everything else is read-only for you. Mark each task done on the Tasks page or the Team tab when you have finished.
+            <ul>{scopes.map(sc => <li key={sc}>{scopeLabel(sc)} <button type="button" className="linkish" onClick={() => setTab(scopeTab(sc) as Tab)}>Go there</button></li>)}</ul>
+          </div>
+        )}
         <div className="sys-title">
           <div><h1>{p.name || 'Untitled system'}</h1><p className="muted">{p.description ? (p.description.length > 200 ? p.description.slice(0, 200) + '…' : p.description) : 'Describe the system on the Profile tab.'}</p></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -289,23 +315,24 @@ export function SystemEditor(props: Props) {
       <nav className="tabs" role="tablist">
         {TABS.map(([k, l], i) => (
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
-            <span className="mono">{i + 1}</span>{l}{k === 'agent' ? (pending ? <span className="pill t-info count">{pending}</span> : null) : k !== 'report' && <span className={`dot ${done[k] ? 'done' : ''}`} />}
+            <span className="mono">{i + 1}</span>{l}{k === 'agent' ? (pending ? <span className="pill t-info count">{pending}</span> : null) : k !== 'report' && k !== 'team' && <span className={`dot ${done[k] ? 'done' : ''}`} />}
           </button>
         ))}
       </nav>
 
-      {tab === 'agent' && <AgentPanel systemId={props.system.id} canEdit={canEdit} aiEnabled={aiEnabled} blockedReason={props.aiBlockedReason} accept={props.accept}
+      {tab === 'agent' && <AgentPanel systemId={props.system.id} canEdit={canEdit} canUpload={canEdit || !!scopes?.includes('evidence')} canDecide={path => canEdit || (!!scopes && proposalAllowed(scopes, path))} aiEnabled={aiEnabled} blockedReason={props.aiBlockedReason} accept={props.accept}
         version={() => version.current} beforeDecide={settle} onApplied={onApplied} onPending={setPending} />}
-      {tab === 'profile' && <ProfileTab p={p} ro={ro} setProfile={setProfile} toggleProfile={toggleProfile} next={() => setTab('classify')} />}
-      {tab === 'classify' && <ClassifyTab data={data} ro={ro} setCls={setCls} toggleClsObj={toggleClsObj} confirm={confirmCls} next={() => setTab('controls')} />}
-      {tab === 'conformity' && <ConformityTab data={data} ro={ro} mutate={mutate} part={part} setPart={setPart} />}
-      {tab === 'controls' && <ControlsTab data={data} ro={ro} setCtrl={setCtrl} filter={ctlFilter} setFilter={setCtlFilter} ai={ai} aiEnabled={aiEnabled} runReview={runReview} />}
+      {tab === 'profile' && <ProfileTab p={p} ro={!can('profile.name')} setProfile={setProfile} toggleProfile={toggleProfile} next={() => setTab('classify')} />}
+      {tab === 'classify' && <ClassifyTab data={data} ro={!can('cls.p1')} setCls={setCls} toggleClsObj={toggleClsObj} confirm={confirmCls} next={() => setTab('controls')} />}
+      {tab === 'conformity' && <ConformityTab data={data} ro={ro} lock={id => !can(`conf.${id}`)} mutate={mutate} part={part} setPart={setPart} />}
+      {tab === 'team' && <TeamTab systemId={props.system.id} slug={org.slug} canAllocate={props.canAllocate} />}
+      {tab === 'controls' && <ControlsTab data={data} ro={ro} lock={id => !can(`ctrl.${id}`)} fullEdit={canEdit} setCtrl={setCtrl} filter={ctlFilter} setFilter={setCtlFilter} ai={ai} aiEnabled={aiEnabled} runReview={runReview} />}
       {tab === 'report' && <ReportTab data={data} incidents={incidents} reportHref={`/o/${org.slug}/systems/${props.system.id}/report`} />}
-      {tab === 'card' && <CardTab data={data} ro={ro} mutate={mutate} cardHref={`/o/${org.slug}/systems/${props.system.id}/card`}
+      {tab === 'card' && <CardTab data={data} ro={!can('card.purpose')} mutate={mutate} cardHref={`/o/${org.slug}/systems/${props.system.id}/card`}
         systemId={props.system.id} canEdit={canEdit} version={() => version.current} beforeDecide={settle} onApplied={onApplied}
         onDecided={() => fetch(`/api/systems/${props.system.id}/agent`).then(r => r.json()).then(b => setPending((b.proposals || []).length)).catch(() => {})}
         goAgent={() => setTab('agent')} />}
-      {tab === 'monitor' && <MonitorTab data={data} ro={ro} mutate={mutate} systemId={props.system.id} incidents={incidents} setIncidents={setIncidents} armed={armed} setArmed={setArmed} />}
+      {tab === 'monitor' && <MonitorTab data={data} ro={!can('metric.x')} incRo={!(canEdit || !!scopes?.includes('monitor'))} mutate={mutate} systemId={props.system.id} incidents={incidents} setIncidents={setIncidents} armed={armed} setArmed={setArmed} />}
     </>
   );
 }
@@ -419,9 +446,9 @@ function ClassifyTab({ data, ro, setCls, toggleClsObj, confirm, next }: { data: 
 }
 
 /* ---------- Controls ---------- */
-function ControlsTab({ data, ro, setCtrl, filter, setFilter, ai, aiEnabled, runReview }: {
-  data: AssessmentData; ro: boolean; setCtrl: (id: string, p: { s?: string; e?: string }) => void;
-  filter: 'all' | 'open' | 'gaps'; setFilter: (f: 'all' | 'open' | 'gaps') => void;
+function ControlsTab({ data, ro, lock, fullEdit, setCtrl, filter, setFilter, ai, aiEnabled, runReview }: {
+  data: AssessmentData; ro: boolean; lock: (id: string) => boolean; fullEdit: boolean; setCtrl: (id: string, p: { s?: string; e?: string }) => void;
+  filter: 'all' | 'open' | 'gaps' | 'mine'; setFilter: (f: 'all' | 'open' | 'gaps' | 'mine') => void;
   ai: { running: boolean; error: string }; aiEnabled: boolean; runReview: () => void;
 }) {
   const list = applicable(data), rd = readiness(data, list), ctrl = data.ctrl || {};
@@ -431,6 +458,7 @@ function ControlsTab({ data, ro, setCtrl, filter, setFilter, ai, aiEnabled, runR
     const s = ctrl[k.id]?.s;
     if (filter === 'gaps') return s !== 'met' && s !== 'na';
     if (filter === 'open') return !s;
+    if (filter === 'mine') return !lock(k.id);
     return true;
   };
   const stripe = (s?: string) => s === 'met' ? 'var(--good)' : s === 'partial' ? 'var(--warn)' : s === 'gap' ? 'var(--crit)' : 'transparent';
@@ -452,8 +480,8 @@ function ControlsTab({ data, ro, setCtrl, filter, setFilter, ai, aiEnabled, runR
           </div>
         </div>
         <div className="ctl-toolbar">
-          <Seg value={filter} plain options={[['all', 'All'], ['open', 'Open'], ['gaps', 'Gaps']]} onChange={v => setFilter(v as 'all' | 'open' | 'gaps')} />
-          {aiEnabled && !ro && <button className="btn" onClick={runReview} disabled={ai.running}>{ai.running ? 'Reviewing evidence…' : 'Review evidence with Claude'}</button>}
+          <Seg value={filter} plain options={[...(fullEdit ? [] : [['mine', 'Mine']] as [string, string][]), ['all', 'All'], ['open', 'Open'], ['gaps', 'Gaps']]} onChange={v => setFilter(v as 'all' | 'open' | 'gaps' | 'mine')} />
+          {aiEnabled && fullEdit && <button className="btn" onClick={runReview} disabled={ai.running}>{ai.running ? 'Reviewing evidence…' : 'Review evidence with Claude'}</button>}
         </div>
       </header>
       {ai.error && <div className="body"><div className="flag">{ai.error}</div></div>}
@@ -463,17 +491,17 @@ function ControlsTab({ data, ro, setCtrl, filter, setFilter, ai, aiEnabled, runR
         if (!items.length) return null;
         return (
           <div key={a}>
-            <div className="areah"><h3>{name}</h3><span className="muted mono">{list.filter(k => k.a === a).length} controls</span></div>
+            <div className="areah" id={`area-${a}`}><h3>{name}</h3><span className="muted mono">{list.filter(k => k.a === a).length} controls</span></div>
             {items.map(k => {
               const c = ctrl[k.id] || {}, n = notes[k.id];
               return (
-                <div className="ctl" key={k.id} style={{ ['--stripe' as string]: stripe(c.s) }}>
-                  <div className="cid">{k.id}</div>
+                <div className={`ctl ${!fullEdit && lock(k.id) ? 'locked' : ''}`} key={k.id} id={`ctl-${k.id}`} style={{ ['--stripe' as string]: stripe(c.s) }}>
+                  <div className="cid">{k.id}{!fullEdit && !lock(k.id) && <span className="assigned-mark">Yours</span>}</div>
                   <div className="main">
-                    <div className="row1"><p>{k.q}</p><Seg value={c.s} options={STATUS} ro={ro} onChange={v => setCtrl(k.id, { s: v })} /></div>
+                    <div className="row1"><p>{k.q}</p><Seg value={c.s} options={STATUS} ro={ro || lock(k.id)} onChange={v => setCtrl(k.id, { s: v })} /></div>
                     <Refs k={k} />
                     {c.s && c.s !== 'na'
-                      ? <label className="field"><span className="evhint">Evidence: {k.ev}</span><textarea id={`ev-${k.id}`} value={c.e || ''} readOnly={ro} maxLength={5000} placeholder="Document names, dates, owners, results" onChange={e => setCtrl(k.id, { e: e.target.value })} /></label>
+                      ? <label className="field"><span className="evhint">Evidence: {k.ev}</span><textarea id={`ev-${k.id}`} value={c.e || ''} readOnly={ro || lock(k.id)} maxLength={5000} placeholder="Document names, dates, owners, results" onChange={e => setCtrl(k.id, { e: e.target.value })} /></label>
                       : <span className="evhint">Expected evidence: {k.ev}</span>}
                     {n && <div className="ai-note"><span className={`pill t-${vtone[n.v] || 'muted'}`}>{n.v === 'supported' ? 'Supported' : n.v === 'missing' ? 'Missing evidence' : 'Weak evidence'}</span><span>{n.n}</span></div>}
                   </div>
@@ -588,8 +616,8 @@ function Spark({ m }: { m: Metric }) {
   );
 }
 
-function MonitorTab({ data, ro, mutate, systemId, incidents, setIncidents, armed, setArmed }: {
-  data: AssessmentData; ro: boolean; mutate: (fn: (d: AssessmentData) => void) => void; systemId: string;
+function MonitorTab({ data, ro, incRo, mutate, systemId, incidents, setIncidents, armed, setArmed }: {
+  data: AssessmentData; ro: boolean; incRo: boolean; mutate: (fn: (d: AssessmentData) => void) => void; systemId: string;
   incidents: Incident[]; setIncidents: (f: (l: Incident[]) => Incident[]) => void; armed: string | null; setArmed: (s: string | null) => void;
 }) {
   const ms = data.metrics || [];
@@ -668,7 +696,7 @@ function MonitorTab({ data, ro, mutate, systemId, incidents, setIncidents, armed
 
       <section className="panel"><header><div><h3>Incident log</h3><small className="muted">Serious incidents involving high-risk systems may need reporting to the authority (EU AI Act Art. 73).</small></div><div className="spacer" />
         <a className="btn" href={`/api/systems/${systemId}/incidents?format=csv`}>Export CSV</a></header>
-        {!ro && <div className="body">
+        {!incRo && <div className="body">
           <form className="grid3" onSubmit={addIncident}>
             <label className="field span2"><span>What happened</span><input type="text" name="title" required maxLength={300} placeholder="Short description" /></label>
             <label className="field"><span>Date</span><input type="date" name="date" defaultValue={today()} required /></label>
@@ -686,8 +714,8 @@ function MonitorTab({ data, ro, mutate, systemId, incidents, setIncidents, armed
               <td className="mono">{i.date}</td>
               <td><b>{i.title}</b>{i.serious && <> <span className="pill t-crit">Reportable</span></>}{legalReview(i) && <> <span className="pill t-warn" title={legalReview(i)!}>Legal review</span></>}<div className="muted" style={{ fontSize: 12 }}>{i.category}{i.notes ? ` · ${i.notes}` : ''}</div></td>
               <td><span className={`pill ${sevTone(i.severity)}`}>{i.severity}</span></td>
-              <td>{ro ? i.status : <select value={i.status} aria-label="Status" style={{ width: 'auto' }} onChange={e => setStatus(i.id, e.target.value)}>{INCIDENT_STATUSES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>}</td>
-              <td>{!ro && <button className={`btn ghost danger ${armed === `i-${i.id}` ? 'armed' : ''}`} onClick={() => deleteIncident(i.id)}>{armed === `i-${i.id}` ? 'Confirm' : 'Delete'}</button>}</td>
+              <td>{incRo ? i.status : <select value={i.status} aria-label="Status" style={{ width: 'auto' }} onChange={e => setStatus(i.id, e.target.value)}>{INCIDENT_STATUSES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>}</td>
+              <td>{!incRo && <button className={`btn ghost danger ${armed === `i-${i.id}` ? 'armed' : ''}`} onClick={() => deleteIncident(i.id)}>{armed === `i-${i.id}` ? 'Confirm' : 'Delete'}</button>}</td>
             </tr>
           )) : <tr><td colSpan={5} className="muted" style={{ textAlign: 'center', padding: 24 }}>No incidents recorded.</td></tr>}
         </tbody></table></div>
@@ -719,7 +747,7 @@ function Journey({ steps, current, go }: { steps: ReturnType<typeof journey>['st
 }
 
 /* ---------- Conformity assessment ---------- */
-function ConformityTab({ data, ro, mutate, part, setPart }: { data: AssessmentData; ro: boolean; mutate: (fn: (d: AssessmentData) => void) => void; part: string; setPart: (p: string) => void }) {
+function ConformityTab({ data, ro, lock, mutate, part, setPart }: { data: AssessmentData; ro: boolean; lock: (id: string) => boolean; mutate: (fn: (d: AssessmentData) => void) => void; part: string; setPart: (p: string) => void }) {
   const qs = questionsFor(data), prog = confProgress(data), a43 = art43(data);
   const set = (id: string, patch: { t?: string; ok?: boolean; from?: string }) => mutate(d => { d.conf = { ...(d.conf || {}), [id]: { ...(d.conf?.[id] || {}), ...patch } }; });
   const confirmMany = (ids: string[]) => mutate(d => {
@@ -728,7 +756,7 @@ function ConformityTab({ data, ro, mutate, part, setPart }: { data: AssessmentDa
     d.conf = next;
   });
   const list = qs.filter(q => q.part === part);
-  const pending = list.filter(q => answerState(data, q).state === 'review').map(q => q.id);
+  const pending = list.filter(q => !lock(q.id) && answerState(data, q).state === 'review').map(q => q.id);
   return (
     <>
       <section className="panel"><div className="body">
@@ -750,19 +778,19 @@ function ConformityTab({ data, ro, mutate, part, setPart }: { data: AssessmentDa
           {list.map(q => {
             const st = answerState(data, q);
             return (
-              <div className="conf-q" key={q.id} id={`conf-${q.id}`}>
-                <div className="conf-h"><span className="mono muted">{q.id.slice(1)}</span><b>{q.topic}</b>
+              <div className={`conf-q ${!ro && lock(q.id) ? 'locked' : ''}`} key={q.id} id={`conf-${q.id}`}>
+                <div className="conf-h"><span className="mono muted">{q.id.slice(1)}</span><b>{q.topic}</b>{!ro && !lock(q.id) && data && <span className="assigned-mark">Yours</span>}
                   {st.state === 'done' && <span className="pill t-good">Confirmed</span>}
                   {st.state === 'review' && <span className="pill t-info" title="Taken from what is already recorded for this system">{st.from === 'Assessment agent' ? 'Proposed by the agent' : `Pre-filled from ${st.from || 'earlier steps'}`}: review</span>}
                   <span className="ref">{q.ref}</span></div>
                 <p>{q.q}</p>
                 <Why text={q.why} />
-                <textarea id={`conf-t-${q.id}`} value={st.text} readOnly={ro} maxLength={CONF_MAX} rows={st.text.length > 300 ? 7 : 4}
+                <textarea id={`conf-t-${q.id}`} value={st.text} readOnly={ro || lock(q.id)} maxLength={CONF_MAX} rows={st.text.length > 300 ? 7 : 4}
                   placeholder="Describe what is in place, with document names, owners and dates."
                   onChange={e => set(q.id, { t: e.target.value, ok: !!e.target.value.trim(), from: undefined })} />
                 <div className="conf-f"><span className="muted mono">{st.text.length.toLocaleString('en-GB')} / {CONF_MAX.toLocaleString('en-GB')}</span>
-                  {!ro && st.state === 'review' && <button type="button" className="btn" onClick={() => set(q.id, { t: st.text, ok: true, from: st.from })}>Confirm</button>}
-                  {!ro && st.state === 'done' && data.conf?.[q.id]?.from && <button type="button" className="linkish" onClick={() => set(q.id, { ok: false })}>Mark for review</button>}
+                  {!ro && !lock(q.id) && st.state === 'review' && <button type="button" className="btn" onClick={() => set(q.id, { t: st.text, ok: true, from: st.from })}>Confirm</button>}
+                  {!ro && !lock(q.id) && st.state === 'done' && data.conf?.[q.id]?.from && <button type="button" className="linkish" onClick={() => set(q.id, { ok: false })}>Mark for review</button>}
                 </div>
               </div>
             );
