@@ -33,7 +33,7 @@ function classify(text: string): { k: Kind; task: string } | null {
   if (/^(Listed|Searched documents|Read )/.test(text)) return { k: 'reader', task: text.replace(/^Read /, 'Reading ').replace(/^Searched documents for/, 'Searching for').replace(/^Listed/, 'Found') };
   if (/^(Researching|Looked up|Could not research)/.test(text)) return { k: 'research', task: text.replace(/^Looked up/, 'Has the facts on').replace(/ in the model library$/, '') };
   if ((m = text.match(/^Rejected ([^:]+): (.*)$/))) return { k: 'checker', task: `Sent back ${m[1]}: ${m[2]}` };
-  if ((m = text.match(/^Proposed (\S+)/))) {
+  if ((m = text.match(/^Proposed (.+?)(?: \(sources checked: \d+\))?$/))) {
     const path = m[1];
     const [head, ...rest] = path.split('.');
     const key = rest.join('.');
@@ -59,7 +59,7 @@ export function AgentCrew({ log, active, proposals }: { log: Entry[]; active: bo
     const s = state.get(c.k)!;
     s.count++; s.last = { ...e, task: c.task }; latest = c.k;
     // Every accepted proposal passed the source checker
-    if (/^Proposed /.test(e.text)) { const ch = state.get('checker')!; ch.count++; ch.last = { ...e, task: `Verified the sources for ${e.text.split(' ')[1]}` }; }
+    if (/^Proposed /.test(e.text)) { const ch = state.get('checker')!; ch.count++; ch.last = { ...e, task: `Verified the sources for ${e.text.replace(/^Proposed /, '').replace(/ \(sources checked: \d+\)$/, '')}` }; }
   }
   const now = Date.now();
   const status = (k: Kind) => {
@@ -76,7 +76,7 @@ export function AgentCrew({ log, active, proposals }: { log: Entry[]; active: bo
     <div className={`crew ${active ? 'is-live' : ''}`} aria-live="polite">
       <div className="crew-head">
         <b>{active ? (working ? `${working} specialist${working === 1 ? '' : 's'} at work` : 'Getting started') : 'How the run went'}</b>
-        <span className="muted">{proposals} proposal{proposals === 1 ? '' : 's'} so far{active ? ' · updates every few seconds; you can leave this page' : ''}</span>
+        <span className="muted">{proposals} proposal{proposals === 1 ? '' : 's'}{active ? ' so far · updates every few seconds; you can leave this page' : ' for you to review'}</span>
       </div>
       <ol className="crew-grid">
         {CREW.map(c => {
@@ -93,7 +93,7 @@ export function AgentCrew({ log, active, proposals }: { log: Entry[]; active: bo
               </div>
               <p className="crew-task" key={s.last?.at || 'none'}>
                 {st === 'working' && <span className="crew-dots" aria-hidden="true"><i /><i /><i /></span>}
-                {s.last ? s.last.task : active ? c.idle : 'Nothing to do on this run'}
+                {s.last ? (st === 'working' ? s.last.task : `Last: ${s.last.task.replace(/^Reading /, 'read ').replace(/^Searching for/, 'searched for').replace(/^Checking /, 'checked ').replace(/^Screening /, 'screened ').replace(/^Settling /, 'settled ')}`) : active ? c.idle : 'Nothing to do on this run'}
               </p>
               <div className="crew-foot"><span className="crew-bar"><i style={{ width: `${s.count / max * 100}%` }} /></span><span className="mono muted">{s.count}</span></div>
             </li>
