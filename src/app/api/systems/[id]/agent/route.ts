@@ -19,7 +19,7 @@ export async function GET(_: Request, { params }: Ctx) {
   const decided = await db.proposals.count({ systemId: id, status: ['accepted', 'rejected'] });
   return json({
     blocked: aiBlocked(a.org),
-    run: live ? { id: live.id, status: live.status, log: live.log.slice(-60), summary: live.summary, error: live.error, proposals: live.proposals, createdAt: live.createdAt, finishedAt: live.finishedAt } : null,
+    run: live ? { id: live.id, status: live.status, log: live.log.slice(-300), summary: live.summary, error: live.error, proposals: live.proposals, createdAt: live.createdAt, finishedAt: live.finishedAt } : null,
     decided,
     proposals: pending.map(p => ({
       id: p.id, path: p.path, label: p.label, section: SECTION_LABEL[p.path.split('.')[0]] || 'Other', kind: fieldFor(p.path)?.kind || 'text',

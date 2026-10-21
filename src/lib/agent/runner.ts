@@ -117,13 +117,14 @@ async function verifySources(ctx: Ctx, raw: unknown): Promise<{ ok: true; source
 async function propose(ctx: Ctx, input: Record<string, unknown>): Promise<string> {
   if (ctx.proposals >= MAX_PROPOSALS) return 'Proposal limit reached. Call finish.';
   const path = String(input.path || '');
+  const reject = async (why: string) => { await ctx.log(`Rejected ${path.slice(0, 80)}: ${why.slice(0, 160)}`); return `Rejected: ${why}`; };
   const v = validateValue(path, input.value);
-  if (!v.ok) return `Rejected: ${v.error}`;
+  if (!v.ok) return reject(v.error);
   const conf = ['high', 'medium', 'low'].includes(String(input.confidence)) ? String(input.confidence) as 'high' | 'medium' | 'low' : 'low';
   const src = await verifySources(ctx, input.sources);
-  if (!src.ok) return `Rejected: ${src.error}`;
+  if (!src.ok) return reject(src.error);
   if (path.startsWith('ctrl.') && ['met', 'partial'].includes((v.value as { s: string }).s) && !src.sources.some(s => s.kind === 'document')) {
-    return 'Rejected: a control can only be "met" or "partial" on the strength of the client\'s own documents.';
+    return reject('a control can only be "met" or "partial" on the strength of the client\'s own documents.');
   }
   const sys = await db.aiSystems.first({ id: ctx.systemId }, { columns: ['data'] });
   const prev = currentValue((sys?.data || {}) as AssessmentData, path);
@@ -136,7 +137,7 @@ async function propose(ctx: Ctx, input: Record<string, unknown>): Promise<string
     });
   });
   ctx.proposals++;
-  await ctx.log(`Proposed ${path}`);
+  await ctx.log(`Proposed ${path} (sources checked: ${src.sources.filter(x => x.kind !== 'web').length})`);
   return `Recorded proposal for ${path}.`;
 }
 

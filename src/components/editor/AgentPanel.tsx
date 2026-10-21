@@ -2,6 +2,7 @@
 /* Evidence documents, the assessment agent's runs, and the review of its proposals. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AssessmentData } from '@/lib/assurance';
+import { AgentCrew } from './AgentCrew';
 
 type Doc = { id: string; name: string; size: number; pages: number; chars: number; status: string; error: string | null; createdAt: string };
 type Src = { kind: string; title: string; ref: string; locator?: string; quote?: string; url?: string };
@@ -173,9 +174,10 @@ export function AgentPanel(props: Props) {
                 <span className="muted">Started {new Date(run.createdAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {run.proposals} proposal{run.proposals === 1 ? '' : 's'}</span>
               </p>
               {run.error && <p className="err">{run.error}</p>}
+              <AgentCrew log={run.log} active={!!active} proposals={run.proposals} />
               {run.summary && <div className="summary"><b>Agent summary</b><p>{run.summary}</p></div>}
-              <details open={!!active}>
-                <summary className="muted">Activity</summary>
+              <details>
+                <summary className="muted">Full activity log</summary>
                 <ol className="runlog">{run.log.map((l, i) => <li key={i}><span className="mono muted">{time(l.at)}</span> {l.text}</li>)}</ol>
               </details>
             </div>
