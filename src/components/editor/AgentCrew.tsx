@@ -86,7 +86,11 @@ function classify(text: string): { k: Kind; task: string } | null {
   return null;
 }
 
-export function AgentCrew({ log, active, proposals }: { log: Entry[]; active: boolean; proposals: number }) {
+type Use = { calls: number; input: number; output: number; cacheRead: number; cacheWrite: number; costUsd: number; tools: number };
+const tok = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+const usd = (n: number) => (n > 0 && n < 0.01 ? '<$0.01' : `$${n.toFixed(2)}`);
+
+export function AgentCrew({ log, active, proposals, usage, only }: { log: Entry[]; active: boolean; proposals: number; usage?: Record<string, Use> | null; only?: string | null }) {
   const [, tick] = useState(0);
   useEffect(() => { if (!active) return; const t = setInterval(() => tick(x => x + 1), 1000); return () => clearInterval(t); }, [active]);
 
@@ -110,12 +114,14 @@ export function AgentCrew({ log, active, proposals }: { log: Entry[]; active: bo
   };
   const max = Math.max(1, ...[...state.values()].map(x => x.count));
   const working = CREW.filter(c => status(c.k) === 'working').length;
+  const use = (k: Kind) => usage?.[({ docs: 'docs' } as Record<string, string>)[k] || k];
+  const total = usage ? Object.values(usage).reduce((a, u) => ({ cost: a.cost + u.costUsd, tokens: a.tokens + u.input + u.output + u.cacheRead + u.cacheWrite }), { cost: 0, tokens: 0 }) : null;
 
   return (
     <div className={`crew ${active ? 'is-live' : ''}`} aria-live="polite">
       <div className="crew-head">
         <b>{active ? (working ? `${working} specialist${working === 1 ? '' : 's'} at work` : 'Getting started') : 'How the run went'}</b>
-        <span className="muted">{proposals} proposal{proposals === 1 ? '' : 's'}{active ? ' so far · updates every few seconds; you can leave this page' : ' for you to review'}</span>
+        <span className="muted">{only ? `${CREW.find(c => c.k === only)?.name || 'One specialist'} only · ` : ''}{proposals} proposal{proposals === 1 ? '' : 's'}{active ? ' so far · updates every few seconds; you can leave this page' : ' for you to review'}{total && total.tokens > 0 ? <> · <span title="Estimated at Anthropic list prices">{tok(total.tokens)} tokens, about {usd(total.cost)}</span></> : null}</span>
       </div>
       <ol className="crew-grid">
         {CREW.map(c => {
@@ -131,6 +137,7 @@ export function AgentCrew({ log, active, proposals }: { log: Entry[]; active: bo
                 {s.last ? (st === 'working' ? s.last.task : `Last: ${s.last.task.replace(/^Reading /, 'read ').replace(/^Searching for/, 'searched for').replace(/^Checking /, 'checked ').replace(/^Screening /, 'screened ').replace(/^Settling /, 'settled ')}`) : active ? c.idle : 'Nothing to do on this run'}
               </p>
               <div className="crew-foot"><span className="crew-st">{st === 'working' ? 'Working' : st === 'done' ? 'Done' : st === 'standby' ? 'Standing by' : st === 'waiting' ? 'Waiting' : 'Not used'}</span><span className="crew-bar"><i style={{ width: `${s.count / max * 100}%` }} /></span><span className="mono muted">{s.count}</span></div>
+              {(() => { const u = use(c.k); return u && (u.calls || u.tools) ? <div className="crew-use mono" title="Model calls, tokens and estimated cost">{u.calls ? `${u.calls} call${u.calls === 1 ? '' : 's'} · ${tok(u.input + u.output + u.cacheRead + u.cacheWrite)} tok · ${usd(u.costUsd)}` : `${u.tools} check${u.tools === 1 ? '' : 's'} · no model cost`}</div> : null; })()}
             </li>
           );
         })}

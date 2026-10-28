@@ -43,7 +43,23 @@ Safeguards:
 - **Per-client consent.** AI assistance (the agent and evidence review) is off for every client until an Ituti admin switches it on from the client's overview page, because documents and assessment text are sent to Anthropic's API. Agree this with the client first; consider a zero-data-retention arrangement with Anthropic.
 - **Isolation.** Searches and quotes are limited to the system being assessed. Text in documents is treated as data, never as instructions.
 
-Runs happen in the background (a few minutes; up to 20) and continue if the page is closed. Settings: `ANTHROPIC_API_KEY`, and optionally `ANTHROPIC_AGENT_MODEL` (default `claude-opus-5-5`).
+Runs happen in the background (a few minutes; up to 30) and continue if the page is closed. Settings: `ANTHROPIC_API_KEY`, and optionally `ANTHROPIC_AGENT_MODEL` (default `claude-opus-5-5`).
+
+### The assessment crew
+
+A run is a crew of specialist agents, each with its own instructions, tools, fields, turn limit and meter. A coordinator runs them in order:
+
+| Specialist | Does | Proposes |
+|---|---|---|
+| Model researcher | Looks up what the provider publishes about the foundation models named in the profile | – |
+| Evidence reader | Reads the documents and writes an evidence map (topics, sections, exact quotes) for the writers | – |
+| Risk classifier | Profile and EU AI Act classification | `profile.*`, `cls.*` |
+| Controls assessor | Rates each control from the client's own documents | `ctrl.*` |
+| Documentation writer | Model card and monitoring metrics | `card.*`, `metric.*` |
+| Conformity writer | Article 43 / Annex VI answers | `conf.*` |
+| Source checker | Verifies every quote before a proposal is stored (no model calls) | – |
+
+A specialist cannot propose outside its fields. Each one's model calls, tokens (input, cache reads and writes, output), estimated cost, tool calls, proposals and time are stored per run in `agent_runs.usage_detail` and shown on the crew cards and, for Ituti admins, on the client's page (*Model use this month, by agent*). Optional settings: `ANTHROPIC_MODEL_<SPECIALIST>` to give one specialist another model (for example `ANTHROPIC_MODEL_READER=claude-sonnet-5-5`), and `ANTHROPIC_PRICES` (JSON, US dollars per million tokens by model id) to change the cost estimates. Web searches by the model researcher are billed separately by Anthropic and are not in the estimate.
 
 ## Agent endpoint for IBM watsonx Orchestrate (A2A)
 
@@ -54,7 +70,29 @@ The assessment agent can be used from IBM watsonx Orchestrate, or any other plat
 - **Authentication:** an API key per client, sent as `Authorization: Bearer ita_…` or `x-api-key: ita_…`. Ituti admins create and revoke keys on the client's page under *Billing and agent access*; the key is shown once and only its hash is stored. A key only ever reaches its own client's systems, tasks and conversations.
 - **What it does:** a Claude-driven assistant (model `ANTHROPIC_MODEL`) with tools to list the client's systems, register a system, save pasted text or attached files (sent inline as base64) as evidence, start a pre-fill assessment, and report its status, gaps and the review and report links. Assessments run in the background; the reply comes straight back and the user asks for the status later. Accepting proposals stays a human step in the web app.
 - **Consent:** the agent refuses to work for a client until an Ituti admin switches AI assistance on for that client.
-- **IBM submission files** are in `ibm/`: the external agent registration for the watsonx Orchestrate ADK (`ituti-ai-assurance-agent.yaml`) and the TSV validation file IBM asks for (`validation.tsv`).
+- **IBM submission files** are in `ibm/`: the external agent registration for the watsonx Orchestrate ADK (`ituti-ai-assurance-agent.yaml`), one per specialist in `ibm/specialists/` (regenerate with `npx tsx scripts/ibm-yaml.ts`), and the TSV validation file IBM asks for (`validation.tsv`).
+
+### Each specialist as its own agent
+
+Every specialist is also an A2A agent of its own, so it can be registered separately in watsonx Orchestrate and observed and costed on its own. Register each address as an external A2A 0.3.0 agent with the client's API key as the bearer token (the list is at `/api/a2a/agents`, and on the client's page):
+
+`/api/a2a/agents/evidence-reader`, `model-researcher`, `risk-classifier`, `controls-assessor`, `documentation-writer`, `conformity-writer`, `source-checker`
+
+Each has its agent card at `<address>/.well-known/agent-card.json`. Called directly, the evidence reader answers questions from a system's documents with quotes, the model researcher looks up a model, the source checker verifies a quote, and each writer starts a run of just that specialist (with the reader and checker in support) and reports its proposals and cost. The same billing rules apply.
+
+### Traces in watsonx Orchestrate (observability and FinOps)
+
+When these server settings are present, every run and every specialist conversation is sent to Orchestrate's trace ingestion over OTLP/HTTP. Each specialist's work is a trace of its own, with that agent's Orchestrate ID on the root span (`agent.id`), the run as the session (`langfuse.session.id`), and a span per model call with its tokens (`gen_ai.usage.*`) and estimated cost (`langfuse.observation.cost_details`). Without them nothing is sent.
+
+| Setting | Value |
+|---|---|
+| `ORCHESTRATE_INSTANCE_URL` | The instance's service URL, `https://api.<region>.watson-orchestrate.cloud.ibm.com/instances/<instance-id>` |
+| `ORCHESTRATE_API_KEY` | An API key for that instance |
+| `ORCHESTRATE_TENANT_ID` | `<account-id>_<instance-id>` |
+| `ORCHESTRATE_AGENT_IDS` | The Agent IDs Orchestrate gave each registered agent: `coordinator=<id>,reader=<id>,research=<id>,classify=<id>,controls=<id>,docs=<id>,conformity=<id>,checker=<id>` (use the main agent's ID for `coordinator`) |
+| `ORCHESTRATE_AUTH` | `iam` (IBM Cloud, the default for `*.cloud.ibm.com`), `mcsp` (AWS) or `apikey` |
+| `ORCHESTRATE_ENV` | `live` (default) or `draft` |
+| `ORCHESTRATE_OTEL_URL`, `ORCHESTRATE_TOKEN_URL` | Only to override the ingestion or token URL |
 
 ### Plans and metering
 
@@ -163,7 +201,7 @@ Set `TEST_DATABASE_URL` to a server URL whose user may create databases named `a
   - EU AI Act classification and scoring;
   - the agent's field validation, and parsing of model research;
   - the database layer: filters, transactions, concurrent saves, the CSV import, and document extraction and search (skipped without `TEST_DATABASE_URL`).
-- `npm run build && npm run test:e2e` starts the built app and runs 86 end-to-end checks. These cover role access, cross-client isolation, saving and version conflicts, cross-site request refusal, incidents, cascading deletes, the sign-in allow-list, invitations, the bootstrap admin, document upload and download rights, a full agent run, and the A2A endpoint (agent card, keys, client isolation, billing confirmation, attachments, streaming and metering). The agent run uses a scripted stand-in for Claude (`AGENT_FAKE_LLM=1`, for tests only), including proposals with an invented quote, an invalid value and model-only control evidence, all of which must be refused.
+- `npm run build && npm run test:e2e` starts the built app and runs about 190 end-to-end checks. These cover role access, cross-client isolation, saving and version conflicts, cross-site request refusal, incidents, cascading deletes, the sign-in allow-list, invitations, the bootstrap admin, document upload and download rights, a full crew run with per-specialist metering and traces sent to a stand-in Orchestrate endpoint, the A2A endpoints (main agent and each specialist: agent cards, keys, client isolation, billing confirmation, attachments, streaming and metering), teams and tasks, and the gap action plan including automatic actions. The agent run uses a scripted stand-in for Claude (`AGENT_FAKE_LLM=1`, for tests only), including proposals with an invented quote, an invalid value and model-only control evidence, all of which must be refused.
 
 ## Where things are
 

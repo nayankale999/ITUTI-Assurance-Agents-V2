@@ -138,18 +138,20 @@ export function applyValue(data: AssessmentData, path: string, value: unknown): 
 }
 
 /** Compact listing of every field with its allowed values and current value, for the agent's first message. */
-export function describeForAgent(data: AssessmentData): string {
+export function describeForAgent(data: AssessmentData, sections?: string[]): string {
   const appl = new Set(applicable(data).map(c => `ctrl.${c.id}`));
   const fmt = (v: unknown) => (v === undefined ? '(empty)' : JSON.stringify(v).slice(0, 300));
   const lines: string[] = [];
   let section = '';
   for (const f of CATALOGUE) {
+    if (sections && !sections.includes(f.section)) continue;
     if (f.section !== section) { section = f.section; lines.push(`\n## ${SECTION_LABEL[section]}`); }
     const opts = f.opts ? ` options: ${f.opts.map(o => `${o[0]}=${o[1]}`).join('; ')}` : f.kind === 'yn' ? ' options: no, yes' : f.kind === 'ynu' ? ' options: no, yes, unsure' : f.kind === 'bool' ? ' options: true, false' : '';
     const tag = f.section === 'ctrl' ? (appl.has(f.path) ? ' [applies]' : ' [does not apply yet]') : '';
     lines.push(`- ${f.path}${tag} | ${f.label}${f.help ? ` | ${f.help}` : ''}${opts} | current: ${fmt(currentValue(data, f.path))}`);
   }
   const ms = data.metrics || [];
+  if (sections && !sections.includes('metric')) return lines.join('\n');
   lines.push('\n## Monitoring metrics (path metric.<name>)');
   lines.push(ms.length ? ms.map(m => `- metric.${m.name} | current: ${fmt({ kind: m.kind, threshold: m.threshold, dir: m.dir, readings: (m.readings || []).slice(-3) })}`).join('\n') : '- (none recorded)');
   return lines.join('\n');

@@ -7,7 +7,7 @@ import { AgentCrew } from './AgentCrew';
 type Doc = { id: string; name: string; size: number; pages: number; chars: number; status: string; error: string | null; createdAt: string };
 type Src = { kind: string; title: string; ref: string; locator?: string; quote?: string; url?: string };
 type Prop = { id: string; path: string; label: string; section: string; kind: string; value: unknown; display: string; previous: string | null; rationale: string; confidence: 'high' | 'medium' | 'low'; sources: Src[] };
-type Run = { id: string; status: 'queued' | 'running' | 'completed' | 'failed'; log: { at: string; text: string }[]; summary: string | null; error: string | null; proposals: number; createdAt: string; finishedAt: string | null };
+type Run = { id: string; status: 'queued' | 'running' | 'completed' | 'failed'; log: { at: string; text: string }[]; summary: string | null; error: string | null; proposals: number; createdAt: string; finishedAt: string | null; usage?: Record<string, any> | null; specialist?: string | null };
 
 type Props = {
   systemId: string;
@@ -176,7 +176,7 @@ export function AgentPanel(props: Props) {
                 <span className="muted">Started {new Date(run.createdAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {run.proposals} proposal{run.proposals === 1 ? '' : 's'}</span>
               </p>
               {run.error && <p className="err">{run.error}</p>}
-              <AgentCrew log={run.log} active={!!active} proposals={run.proposals} />
+              <AgentCrew log={run.log} active={!!active} proposals={run.proposals} usage={run.usage} only={run.specialist} />
               {run.summary && <div className="summary"><b>Agent summary</b><p>{run.summary}</p></div>}
               <details>
                 <summary className="muted">Full activity log</summary>

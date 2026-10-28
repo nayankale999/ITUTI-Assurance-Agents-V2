@@ -1,0 +1,25 @@
+# watsonx Orchestrate external agent: the Conformity writer of Ituti AI Assurance (A2A protocol 0.3.0).
+# Import with the watsonx Orchestrate ADK:  orchestrate agents import -f ibm/specialists/conformity-writer.yaml
+# Or in the UI: add an external agent, choose A2A 0.3.0 and enter the api_url below.
+# Replace the token with the client's Ituti AI Assurance API key. Never commit a real key.
+spec_version: v1
+kind: external
+name: ituti_conformity_writer
+title: "Ituti AI Assurance: Conformity writer"
+nickname: ituti_conformity_writer
+provider: external_chat/A2A/0.3.0
+description: >
+  Drafts answers to the organisational, project and technical conformity assessment questions (EU AI Act Article
+  43 and Annex VI) from the evidence, in prose a reviewer can confirm.
+tags:
+  - AI governance
+  - EU AI Act
+  - Ituti AI Assurance crew
+api_url: https://assurance.ituti.tech/api/a2a/agents/conformity-writer
+auth_scheme: BEARER_TOKEN
+auth_config:
+  token: ita_REPLACE_WITH_CLIENT_API_KEY
+chat_params:
+  stream: true
+  sendHistory: true
+  pushNotifications: false

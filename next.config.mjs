@@ -22,6 +22,8 @@ const nextConfig = {
     return [
       { source: '/.well-known/agent-card.json', destination: '/api/a2a/card' },
       { source: '/.well-known/agent.json', destination: '/api/a2a/card' },
+      { source: '/api/a2a/agents/:agent/.well-known/agent-card.json', destination: '/api/a2a/agents/:agent' },
+      { source: '/api/a2a/agents/:agent/.well-known/agent.json', destination: '/api/a2a/agents/:agent' },
     ];
   },
   async headers() {

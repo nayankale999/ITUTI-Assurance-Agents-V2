@@ -1,0 +1,25 @@
+# watsonx Orchestrate external agent: the Evidence reader of Ituti AI Assurance (A2A protocol 0.3.0).
+# Import with the watsonx Orchestrate ADK:  orchestrate agents import -f ibm/specialists/evidence-reader.yaml
+# Or in the UI: add an external agent, choose A2A 0.3.0 and enter the api_url below.
+# Replace the token with the client's Ituti AI Assurance API key. Never commit a real key.
+spec_version: v1
+kind: external
+name: ituti_evidence_reader
+title: "Ituti AI Assurance: Evidence reader"
+nickname: ituti_evidence_reader
+provider: external_chat/A2A/0.3.0
+description: >
+  Reads the evidence documents uploaded for an AI system and answers questions about them with exact quotes and
+  locations. In a full assessment it maps which documents cover which topics for the other specialists.
+tags:
+  - AI governance
+  - EU AI Act
+  - Ituti AI Assurance crew
+api_url: https://assurance.ituti.tech/api/a2a/agents/evidence-reader
+auth_scheme: BEARER_TOKEN
+auth_config:
+  token: ita_REPLACE_WITH_CLIENT_API_KEY
+chat_params:
+  stream: true
+  sendHistory: true
+  pushNotifications: false

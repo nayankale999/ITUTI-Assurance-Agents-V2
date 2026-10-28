@@ -21,7 +21,15 @@ process.env.BOOTSTRAP_ADMIN_EMAIL = 'boss@itutitech.test';
 process.env.SMTP_HOST = '';
 process.env.ANTHROPIC_API_KEY = '';
 process.env.AGENT_FAKE_LLM = '1'; // scripted stand-in for Claude
+// Traces go to a local stand-in for the watsonx Orchestrate ingestion endpoint
+const OTLP_PORT = 4400 + Math.floor(Math.random() * 500);
+process.env.ORCHESTRATE_OTEL_URL = `http://127.0.0.1:${OTLP_PORT}/v1/orchestrate/inject/traces`;
+process.env.ORCHESTRATE_API_KEY = 'e2e-orchestrate-key';
+process.env.ORCHESTRATE_AUTH = 'apikey';
+process.env.ORCHESTRATE_TENANT_ID = 'acct1_inst1';
+process.env.ORCHESTRATE_AGENT_IDS = 'coordinator=wxo-coordinator,reader=wxo-reader,research=wxo-research,classify=wxo-classify,controls=wxo-controls,docs=wxo-docs,conformity=wxo-conformity,checker=wxo-checker';
 
+import http from 'http';
 import mysql from 'mysql2/promise';
 import { db } from '../src/data';
 import { closePool } from '../src/data/sql';
@@ -32,6 +40,12 @@ const PORT = new URL(BASE).port || '3100';
 const results: [string, boolean, string?][] = [];
 const check = (name: string, ok: boolean, detail?: string) => { results.push([name, ok, detail]); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${!ok && detail ? ` (${detail})` : ''}`); };
 const logs: string[] = [];
+const traces: { headers: http.IncomingHttpHeaders; body: Buffer }[] = [];
+const otlp = http.createServer((req, res) => {
+  const parts: Buffer[] = [];
+  req.on('data', d => parts.push(d)).on('end', () => { traces.push({ headers: req.headers, body: Buffer.concat(parts) }); res.writeHead(200, { 'content-type': 'application/x-protobuf' }); res.end(); });
+}).listen(OTLP_PORT, '127.0.0.1');
+const traceText = () => traces.map(t => t.body.toString('latin1')).join('\n');
 
 async function startServer() {
   const proc = spawn('npx', ['next', 'start', '-p', PORT], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
@@ -172,6 +186,20 @@ async function main() {
     const paths = (state?.proposals || []).map((x: any) => x.path).sort();
     check('valid proposals are waiting for review', JSON.stringify(paths) === JSON.stringify(['card.limitations', 'ctrl.TEC-2', 'profile.lifecycle']), paths.join(','));
     check('an invented quote, an invalid option and model-only control evidence are all refused', !paths.includes('ctrl.GOV-1') && !paths.includes('profile.sector') && !paths.includes('ctrl.DAT-1'));
+    {
+      const runRow = await db.agentRuns.first({ id: state?.run?.id });
+      const u = runRow?.usage_detail || {};
+      check('each specialist has its own meter', ['reader', 'classify', 'controls', 'docs', 'conformity', 'checker'].every(k => u[k]) && u.controls.calls >= 2 && u.controls.costUsd > 0 && u.checker.tools >= 4 && u.checker.calls === 0, JSON.stringify(u).slice(0, 400));
+      check('proposals are counted against the specialist that made them', u.controls.proposals === 1 && u.classify.proposals === 1 && u.docs.proposals === 1);
+      check('the run totals add up the specialists', runRow!.outputTokens === Object.values(u).reduce((a: number, x: any) => a + x.output, 0));
+      check('a specialist cannot propose outside its fields', state.run.log.some((l: any) => /Rejected ctrl\.GOV-3: outside your fields; the controls assessor/.test(l.text)));
+      check('the run is shown as a crew with costs', state.run.usage?.controls?.costUsd > 0);
+      for (let i = 0; i < 20 && !traceText().includes('wxo-conformity'); i++) await new Promise(r => setTimeout(r, 300));
+      const tt = traceText();
+      check('traces are sent to Orchestrate with the API key', traces.length > 0 && traces.every(t => t.headers['x-api-key'] === 'e2e-orchestrate-key' && String(t.headers['content-type']).includes('protobuf')));
+      check('each specialist reports under its own Orchestrate agent ID', ['wxo-coordinator', 'wxo-reader', 'wxo-classify', 'wxo-controls', 'wxo-docs', 'wxo-conformity', 'wxo-checker'].every(id => tt.includes(id)), tt.slice(0, 200));
+      check('traces carry the tenant, session and token usage', tt.includes('acct1_inst1') && tt.includes('langfuse.session.id') && tt.includes(state.run.id) && tt.includes('gen_ai.usage.input_tokens') && tt.includes('langfuse.observation.cost_details'));
+    }
     const tec = state?.proposals?.find((x: any) => x.path === 'ctrl.TEC-2');
     check('a proposal cites the document and the page section', tec?.sources?.[0]?.ref === docId && /^section/.test(tec?.sources?.[0]?.locator || ''));
     const lim = state?.proposals?.find((x: any) => x.path === 'card.limitations');
@@ -251,6 +279,39 @@ async function main() {
     check('status reports proposals waiting and the review link', st.reply.includes('proposals_waiting_for_review') && st.reply.includes(`/systems/${fraud.id}`));
     const ctxRow = await db.a2aContexts.first({ id: ctxId });
     check('the conversation is remembered for its context', (ctxRow?.history.length || 0) >= 8);
+
+    // ---------- The specialists as separate A2A agents ----------
+    {
+      const list = await (await get('/api/a2a/agents')).json();
+      check('the crew is listed with an address per specialist', list.specialists?.length === 7 && list.specialists.every((x: any) => x.url.startsWith(`${BASE}/api/a2a/agents/`)));
+      const spCard = await (await get('/api/a2a/agents/controls-assessor/.well-known/agent-card.json')).json();
+      check('each specialist publishes its own agent card', spCard.protocolVersion === '0.3.0' && spCard.name === 'Ituti AI Assurance: Controls assessor' && spCard.url === `${BASE}/api/a2a/agents/controls-assessor` && spCard.skills?.length === 1);
+      check('an unknown specialist is not found', (await get('/api/a2a/agents/nobody')).status === 404);
+      const spRpc = (slug: string, key: string | null, text: string) => fetch(`${BASE}/api/a2a/agents/${slug}`, {
+        method: 'POST', headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
+        body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'message/send', params: { message: { kind: 'message', role: 'user', messageId: randomBytes(8).toString('hex'), parts: [{ kind: 'text', text }] } } }),
+      });
+      const spSay = async (slug: string, text: string) => { const r = await spRpc(slug, keyA, text); const j = await r.json(); return { status: r.status, reply: j.result?.status?.message?.parts?.map((x: any) => x.text).join('') || '', raw: j }; };
+      check('a specialist refuses calls without an API key', (await spRpc('evidence-reader', null, 'hi')).status === 401);
+      const rd = await spSay('evidence-reader', 'search the evidence of "Fraud model" for validation');
+      check('the evidence reader answers from the documents', rd.status === 200 && rd.reply.includes('fraud-validation.md') && /validation/i.test(rd.reply), JSON.stringify(rd.raw).slice(0, 300));
+      const okQ = await spSay('source-checker', 'verify «Independent validation of the model was completed by the second-line Model Risk team» in "Fraud model"');
+      check('the source checker confirms a real quote and where it is', okQ.reply.includes('"found":true') && okQ.reply.includes('fraud-validation.md'), okQ.reply.slice(0, 200));
+      const badQ = await spSay('source-checker', 'verify «The board approved the AI policy on 1 January 2019» in "Fraud model"');
+      check('the source checker rejects an invented quote', badQ.reply.includes('"found":false'));
+      check('the model researcher looks up a model', (await spSay('model-researcher', 'look up Example Model 1')).reply.includes('huggingface.co/example/model'));
+      check('the specialists only see this client\'s systems', (await spSay('evidence-reader', 'search "Secret claims model"')).reply.includes('No system matches'));
+      const runsBefore = await db.agentRuns.count({ systemId: fraud.id });
+      const sp = await spSay('controls-assessor', 'start on "Fraud model"');
+      check('a writer starts a run of just that specialist', sp.reply.includes('"started":true'), sp.reply.slice(0, 200));
+      let spRun = null;
+      for (let i = 0; i < 60; i++) { spRun = await db.agentRuns.first({ systemId: fraud.id, specialist: 'controls' }); if (spRun && !['queued', 'running'].includes(spRun.status)) break; await new Promise(r => setTimeout(r, 500)); }
+      const su = spRun?.usage_detail || {};
+      check('the specialist run uses only that writer, with the reader and checker in support', spRun?.status === 'completed' && (await db.agentRuns.count({ systemId: fraud.id })) === runsBefore + 1 && !!su.controls && !!su.reader && !su.classify && !su.docs && !su.conformity, JSON.stringify({ s: spRun?.status, e: spRun?.error, k: Object.keys(su) }));
+      const res = await spSay('controls-assessor', 'results for "Fraud model"');
+      check('a writer reports its own results and cost', res.reply.includes('"status":"completed"') && res.reply.includes('estimated_cost_usd') && res.reply.includes('ctrl.TEC-2') && !res.reply.includes('card.limitations'), res.reply.slice(0, 300));
+      check('specialist conversations are traced under their own agent ID', traceText().includes('wxo-reader') && traceText().includes('wxo-checker'));
+    }
     const sse = await fetch(`${BASE}/api/a2a`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${keyA}` },
       body: JSON.stringify({ jsonrpc: '2.0', id: 99, method: 'message/stream', params: { message: { kind: 'message', role: 'user', messageId: 'm-stream', parts: [{ kind: 'text', text: 'status of "Fraud model"' }] } } }) });
     const events = (await sse.text()).split('\n\n').filter(Boolean).map(chunk => JSON.parse(chunk.replace(/^data: /, '')));
@@ -261,6 +322,7 @@ async function main() {
     await db.apiKeys.update({ orgId: orgB.id }, { revokedAt: new Date() });
     check('a revoked key is refused', (await rpc(keyB, 'message/send', {})).status === 401);
     check('the admin sees plan, usage and keys on the client page', await (async () => { const h = await (await get(`/o/${orgA.slug}`, c.admin)).text(); return h.includes('Billing and agent access') && h.includes('e2e A'); })());
+    check('the client page shows model use by agent and the address of each specialist', await (async () => { const h = await (await get(`/o/${orgA.slug}`, c.admin)).text(); const ok = [h.includes('Model use this month, by agent'), h.includes('Controls assessor'), h.includes('/api/a2a/agents/<!-- -->source-checker') || h.includes('/api/a2a/agents/source-checker'), /\$\d+\.\d\d|&lt;\$0\.01/.test(h)]; if (!ok.every(Boolean)) console.log('client page checks', ok, h.slice(h.indexOf('Model use'), h.indexOf('Model use') + 1500)); return ok.every(Boolean); })());
     check('client admins do not see API keys', !(await (await get(`/o/${orgA.slug}`, c.clientAdmin)).text()).includes('Billing and agent access'));
 
     // ---------- Sign-in rules (real email flow, links printed to the log) ----------
@@ -474,6 +536,7 @@ async function main() {
     })());
   } finally {
     try { process.kill(-server.pid!, 'SIGTERM'); } catch { server.kill('SIGTERM'); }
+    otlp.close();
     fs.rmSync(DATA, { recursive: true, force: true });
     await closePool();
     const c2 = await adminConn(); await c2.query(`DROP DATABASE IF EXISTS \`${DB_NAME}\``); await c2.end();

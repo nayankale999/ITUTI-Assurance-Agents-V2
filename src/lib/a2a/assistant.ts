@@ -60,9 +60,9 @@ const TOOLS: Anthropic.Tool[] = [
 
 type Turn = { org: Org; files: { name: string; buf: Buffer }[]; refusedFiles: string[]; contextId: string };
 
-const sysLink = (org: Org, s: AiSystemRow | { id: string }) => `${appUrl()}/o/${org.slug}/systems/${s.id}`;
+export const sysLink = (org: Org, s: AiSystemRow | { id: string }) => `${appUrl()}/o/${org.slug}/systems/${s.id}`;
 
-async function resolve(org: Org, ref: string): Promise<{ sys?: AiSystemRow; error?: string }> {
+export async function resolve(org: Org, ref: string): Promise<{ sys?: AiSystemRow; error?: string }> {
   const r = String(ref || '').trim();
   if (!r) return { error: 'Say which system.' };
   const byId = await db.aiSystems.first({ id: r.slice(0, 36), orgId: org.id });
@@ -75,8 +75,8 @@ async function resolve(org: Org, ref: string): Promise<{ sys?: AiSystemRow; erro
   return { error: `Several systems match "${r}": ${loose.map(s => `${s.name} (${s.id})`).join(', ')}. Ask which one.` };
 }
 
-async function latestRun(systemId: string) {
-  const run = await db.agentRuns.first({ systemId }, { orderBy: [['createdAt', 'desc']] });
+export async function latestRun(systemId: string, specialist?: string) {
+  const run = await db.agentRuns.first(specialist ? { systemId, specialist } : { systemId }, { orderBy: [['createdAt', 'desc']] });
   if (run && ['queued', 'running'].includes(run.status) && Date.now() - (run.heartbeatAt || run.createdAt).getTime() > STALE_MS) return { ...run, status: 'failed' as const, error: 'The run stopped responding.' };
   return run;
 }
@@ -172,7 +172,7 @@ async function runTool(turn: Turn, name: string, input: Record<string, any>): Pr
   }
 }
 
-const textOf = (m: Message) => m.parts.filter((p): p is Extract<Part, { kind: 'text' }> => p.kind === 'text').map(p => p.text).join('\n').trim();
+export const textOf = (m: Message) => m.parts.filter((p): p is Extract<Part, { kind: 'text' }> => p.kind === 'text').map(p => p.text).join('\n').trim();
 
 function filesOf(m: Message) {
   const files: { name: string; buf: Buffer }[] = [], refused: string[] = [];
@@ -189,11 +189,11 @@ function filesOf(m: Message) {
   return { files, refused };
 }
 
-function agentMessage(text: string, taskId: string, contextId: string): Message {
+export function agentMessage(text: string, taskId: string, contextId: string): Message {
   return { kind: 'message', role: 'agent', messageId: randomUUID(), parts: [{ kind: 'text', text }], taskId, contextId };
 }
 
-function status(taskId: string, contextId: string, state: TaskStatusUpdateEvent['status']['state'], final: boolean, text?: string): TaskStatusUpdateEvent {
+export function status(taskId: string, contextId: string, state: TaskStatusUpdateEvent['status']['state'], final: boolean, text?: string): TaskStatusUpdateEvent {
   return { kind: 'status-update', taskId, contextId, final, status: { state, timestamp: new Date().toISOString(), ...(text ? { message: agentMessage(text, taskId, contextId) } : {}) } };
 }
 

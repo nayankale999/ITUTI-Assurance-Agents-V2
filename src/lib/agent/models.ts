@@ -4,6 +4,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { db, type ModelRow, type Source } from '@/data';
 import { llm, agentModel } from './llm';
+import { modelFor } from './specialists';
 
 export const DOSSIER_KEYS: [string, string][] = [
   ['identity', 'Provider, model and version'],
@@ -83,7 +84,9 @@ export function parseDossier(content: Anthropic.ContentBlock[]) {
 }
 
 /** Returns the library entry for a model, researching it first when missing or older than 90 days. */
-export async function getModel(provider: string, model: string, onProgress?: (t: string) => void): Promise<ModelRow> {
+export type OnCall = (model: string, msg: Anthropic.Message, start: number, end: number) => void;
+
+export async function getModel(provider: string, model: string, onProgress?: (t: string) => void, onCall?: OnCall): Promise<ModelRow> {
   const mkey = modelKey(provider, model);
   const existing = await db.models.first({ mkey });
   const fresh = existing?.status === 'ready' && existing.researchedAt && Date.now() - existing.researchedAt.getTime() < FRESH_DAYS * 864e5;
@@ -108,7 +111,10 @@ export async function getModel(provider: string, model: string, onProgress?: (t:
     ];
     const all: Anthropic.ContentBlock[] = [];
     for (let turn = 0; turn < 6; turn++) {
-      const msg = await llm().messages.create({ model: agentModel(), max_tokens: 8000, tools, messages });
+      const m = modelFor('research', agentModel());
+      const t0 = Date.now();
+      const msg = await llm().messages.create({ model: m, max_tokens: 8000, tools, messages });
+      onCall?.(m, msg, t0, Date.now());
       all.push(...msg.content);
       if (msg.stop_reason !== 'pause_turn') break;
       messages.push({ role: 'assistant', content: msg.content });
