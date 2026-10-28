@@ -50,6 +50,7 @@ export async function orgIncidents(orgId: string) {
   const systems = await db.aiSystems.find({ orgId }, { columns: ['id', 'name'] });
   const names = new Map(systems.map(s => [s.id, s.name]));
   const rows = systems.length ? await db.incidents.find({ systemId: systems.map(s => s.id) }, { orderBy: [['date', 'desc'], ['createdAt', 'desc']] }) : [];
-  return rows.map(i => ({ id: i.id, systemId: i.systemId, system: names.get(i.systemId) || '', title: i.title, date: i.date, severity: i.severity, category: i.category, status: i.status, serious: i.serious, notes: i.notes }));
+  return rows.map(i => ({ id: i.id, systemId: i.systemId, system: names.get(i.systemId) || '', title: i.title, date: i.date, severity: i.severity, category: i.category, status: i.status, serious: i.serious, notes: i.notes,
+    kind: i.kind, gapRef: i.gapRef, owner: i.ownerName || '', department: i.department || '', due: i.due }));
 }
 

@@ -18,7 +18,7 @@ export default async function SystemPage({ params, searchParams }: { params: Pro
   const viewer = await requireViewer();
   const a = await systemAccess(viewer, id);
   if (!a || a.org.slug !== slug) notFound();
-  const incidents = await db.incidents.find({ systemId: id }, { orderBy: [['date', 'desc'], ['createdAt', 'desc']] });
+  const incidents = await db.incidents.find({ systemId: id, kind: 'incident' }, { orderBy: [['date', 'desc'], ['createdAt', 'desc']] });
   return (
     <SystemEditor
       key={a.system.id}

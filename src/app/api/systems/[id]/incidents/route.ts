@@ -9,7 +9,7 @@ export async function GET(req: Request, { params }: Ctx) {
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
-  const rows = await db.incidents.find({ systemId: id }, { orderBy: [['date', 'desc'], ['createdAt', 'desc']] });
+  const rows = await db.incidents.find({ systemId: id, kind: 'incident' }, { orderBy: [['date', 'desc'], ['createdAt', 'desc']] });
   if (new URL(req.url).searchParams.get('format') === 'csv') {
     const q = (x: unknown) => `"${String(x ?? '').replace(/"/g, '""')}"`;
     const csv = [['Date', 'Incident', 'Severity', 'Category', 'Status', 'Reportable', 'Details'].map(q).join(','),

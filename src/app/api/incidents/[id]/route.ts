@@ -12,7 +12,8 @@ async function load(req: Request, id: string) {
   if (!inc) return { error: err(404, 'Not found.') };
   const a = await loadSystem(v, inc.systemId);
   if (!a) return { error: err(404, 'Not found.') };
-  if (!a.canEdit && !a.scopes?.includes('monitor')) return { error: err(403, 'You cannot change incidents for this system.') };
+  const scope = inc.kind === 'gap' ? 'plan' : 'monitor';
+  if (!a.canEdit && !a.scopes?.includes(scope)) return { error: err(403, inc.kind === 'gap' ? 'You cannot change gap actions for this system.' : 'You cannot change incidents for this system.') };
   return { v, inc, a };
 }
 
@@ -20,10 +21,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const { id } = await params;
   const r = await load(req, id); if ('error' in r) return r.error;
   const parsed = incidentPatchSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return err(400, 'Invalid status.');
-  await db.incidents.update({ id }, { status: parsed.data.status, updatedAt: new Date() });
+  if (!parsed.success) return err(400, 'Invalid change.');
+  const { status, ...rest } = parsed.data;
+  if (r.inc.kind !== 'gap' && Object.keys(rest).length) return err(400, 'Only gap actions have an owner, department and due date.');
+  if (rest.ownerId) {
+    const m = await db.memberships.first({ orgId: r.a.org.id, userId: rest.ownerId });
+    if (!m) return err(400, 'The owner must be a member of this organisation, or enter a name instead.');
+  }
+  await db.incidents.update({ id }, { ...rest, ...(status ? { status } : {}), updatedAt: new Date() });
   const open = await refreshIncidentCount(r.inc.systemId);
-  await audit({ orgId: r.a.system.orgId, systemId: r.inc.systemId, userId: r.v.id, action: 'incident.updated', detail: { title: r.inc.title, status: parsed.data.status } });
+  await audit({ orgId: r.a.system.orgId, systemId: r.inc.systemId, userId: r.v.id, action: 'incident.updated', detail: { title: r.inc.title, status: status || 'details' } });
   return json({ ok: true, open });
 }
 

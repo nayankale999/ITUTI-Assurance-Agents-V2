@@ -86,6 +86,15 @@ export const MIGRATIONS: [string, string[]][] = [
       status VARCHAR(16) NOT NULL, due VARCHAR(10) NULL, note TEXT NULL, createdById ${REF}, createdAt ${AT}, updatedAt ${AT}, doneAt ${AT_NULL},
       KEY ix_task_sys (systemId), KEY ix_task_user (assigneeId, status), KEY ix_task_org (orgId)) ${T}`,
   ]],
+  ['007_gap_actions', [
+    `ALTER TABLE incidents ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'incident'`,
+    `ALTER TABLE incidents ADD COLUMN gapRef VARCHAR(64) NULL`,
+    `ALTER TABLE incidents ADD COLUMN ownerId VARCHAR(36) NULL`,
+    `ALTER TABLE incidents ADD COLUMN ownerName VARCHAR(255) NULL`,
+    `ALTER TABLE incidents ADD COLUMN department VARCHAR(120) NULL`,
+    `ALTER TABLE incidents ADD COLUMN due VARCHAR(10) NULL`,
+    `CREATE INDEX ix_inc_kind ON incidents (systemId, kind, status)`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */

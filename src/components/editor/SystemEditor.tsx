@@ -13,6 +13,8 @@ import { useCardProposals, SuggestionBox } from './CardSuggestions';
 import { remember, placeFor, onLeave } from '@/lib/resume';
 import { pathAllowed, proposalAllowed, scopeLabel, scopeTab } from '@/lib/tasks';
 import { TeamTab } from './TeamTab';
+import { ActionPlan } from './ActionPlan';
+import { findGaps } from '@/lib/gaps';
 import { journey, reassessment, regulatoryScore, contextSnapshot } from '@/lib/journey';
 import { CONF_PARTS, CONF_MAX, questionsFor, answerState, confProgress, art43 } from '@/lib/conformity';
 import { INCIDENT_STATUSES, INCIDENT_CATEGORIES, SEVERITIES, sevTone, legalReview, isActive } from '@/lib/incidents';
@@ -34,7 +36,7 @@ type Props = {
   focusTask?: string;
 };
 
-const TABS = [['agent', 'Evidence and agent'], ['profile', 'Profile'], ['classify', 'Classification'], ['controls', 'Controls'], ['conformity', 'Conformity'], ['report', 'Report'], ['card', 'Model card'], ['monitor', 'Monitoring'], ['team', 'Team']] as const;
+const TABS = [['agent', 'Evidence and agent'], ['profile', 'Profile'], ['classify', 'Classification'], ['controls', 'Controls'], ['conformity', 'Conformity'], ['report', 'Report'], ['card', 'Model card'], ['monitor', 'Monitoring'], ['plan', 'Action plan'], ['team', 'Team']] as const;
 type Tab = (typeof TABS)[number][0];
 const optLabel = (k: string, v: unknown) => (OPTS[k].find(o => o[0] === v) || [, ''])[1];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -265,11 +267,13 @@ export function SystemEditor(props: Props) {
     controls: rd.open === 0 && rd.den > 0,
     report: false,
     team: false,
+    plan: false,
     card: !!data.card?.purpose,
     conformity: confProgress(data).pct === 100,
     monitor: !!data.metrics?.length,
   };
   const jr = journey(data);
+  const gapCount = useMemo(() => findGaps(data).length, [data]);
   const score = regulatoryScore(data);
   const confirmCls = () => mutate(d => { d.clsOk = { at: new Date().toISOString(), snap: contextSnapshot(d) }; });
 
@@ -310,12 +314,12 @@ export function SystemEditor(props: Props) {
         </div>
       </section>
 
-      <Journey steps={jr.steps} current={jr.current} go={t => setTab(t as Tab)} />
+      <Journey steps={jr.steps} current={jr.current} gaps={gapCount} go={t => setTab(t as Tab)} />
 
       <nav className="tabs" role="tablist">
         {TABS.map(([k, l], i) => (
           <button key={k} className="tab" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
-            <span className="mono">{i + 1}</span>{l}{k === 'agent' ? (pending ? <span className="pill t-info count">{pending}</span> : null) : k !== 'report' && k !== 'team' && <span className={`dot ${done[k] ? 'done' : ''}`} />}
+            <span className="mono">{i + 1}</span>{l}{k === 'agent' ? (pending ? <span className="pill t-info count">{pending}</span> : null) : k !== 'report' && k !== 'team' && k !== 'plan' && <span className={`dot ${done[k] ? 'done' : ''}`} />}
           </button>
         ))}
       </nav>
@@ -325,6 +329,8 @@ export function SystemEditor(props: Props) {
       {tab === 'profile' && <ProfileTab p={p} ro={!can('profile.name')} setProfile={setProfile} toggleProfile={toggleProfile} next={() => setTab('classify')} />}
       {tab === 'classify' && <ClassifyTab data={data} ro={!can('cls.p1')} setCls={setCls} toggleClsObj={toggleClsObj} confirm={confirmCls} next={() => setTab('controls')} />}
       {tab === 'conformity' && <ConformityTab data={data} ro={ro} lock={id => !can(`conf.${id}`)} mutate={mutate} part={part} setPart={setPart} />}
+      {tab === 'plan' && <ActionPlan systemId={props.system.id} settle={settle} journeyDone={jr.current >= 5}
+        goTo={(t, focus) => { setTab(t as Tab); const [k, key] = focus.split(':'); if (k === 'conf') setPart(({ O: 'org', P: 'project', T: 'tech' } as Record<string, string>)[key[0]] || 'org'); if (k === 'ctrl' && ctlFilter !== 'all') setCtlFilter('all'); setTimeout(() => document.getElementById(k === 'ctrl' ? `ctl-${key}` : `conf-${key}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350); }} />}
       {tab === 'team' && <TeamTab systemId={props.system.id} slug={org.slug} canAllocate={props.canAllocate} />}
       {tab === 'controls' && <ControlsTab data={data} ro={ro} lock={id => !can(`ctrl.${id}`)} fullEdit={canEdit} setCtrl={setCtrl} filter={ctlFilter} setFilter={setCtlFilter} ai={ai} aiEnabled={aiEnabled} runReview={runReview} />}
       {tab === 'report' && <ReportTab data={data} incidents={incidents} reportHref={`/o/${org.slug}/systems/${props.system.id}/report`} />}
@@ -694,7 +700,7 @@ function MonitorTab({ data, ro, incRo, mutate, systemId, incidents, setIncidents
           )}
         </div></section>
 
-      <section className="panel"><header><div><h3>Incident log</h3><small className="muted">Serious incidents involving high-risk systems may need reporting to the authority (EU AI Act Art. 73).</small></div><div className="spacer" />
+      <section className="panel"><header><div><h3>Incident log</h3><small className="muted">Adverse events involving the AI system. Serious incidents involving high-risk systems may need reporting to the authority (EU AI Act Art. 73). Actions to close assessment gaps are on the Action plan tab.</small></div><div className="spacer" />
         <a className="btn" href={`/api/systems/${systemId}/incidents?format=csv`}>Export CSV</a></header>
         {!incRo && <div className="body">
           <form className="grid3" onSubmit={addIncident}>
@@ -725,11 +731,12 @@ function MonitorTab({ data, ro, incRo, mutate, systemId, incidents, setIncidents
 }
 
 /* ---------- Compliance journey ---------- */
-function Journey({ steps, current, go }: { steps: ReturnType<typeof journey>['steps']; current: number; go: (tab: string) => void }) {
+function Journey({ steps, current, gaps, go }: { steps: ReturnType<typeof journey>['steps']; current: number; gaps: number; go: (tab: string) => void }) {
   const cur = steps[current];
+  const allDone = current >= steps.length;
   return (
     <section className="journey" aria-label="Compliance journey">
-      <ol>
+      <ol className="six">
         {steps.map((s, i) => (
           <li key={s.key} className={`js-${s.state} ${i === current ? 'js-current' : ''}`}>
             <button type="button" onClick={() => go(s.tab)} aria-current={i === current ? 'step' : undefined}>
@@ -738,10 +745,18 @@ function Journey({ steps, current, go }: { steps: ReturnType<typeof journey>['st
             </button>
           </li>
         ))}
+        <li className={`js-plan js-${gaps ? (allDone ? 'progress' : 'todo') : 'done'} ${allDone && gaps ? 'js-current' : ''}`}>
+          <button type="button" onClick={() => go('plan')}>
+            <span className="js-n" aria-hidden="true">{gaps ? '!' : '✓'}</span>
+            <span className="js-t"><b>Close the gaps</b><small>{gaps ? `${gaps} gap${gaps === 1 ? '' : 's'} open` : 'No gaps open'}</small></span>
+          </button>
+        </li>
       </ol>
       <p className="js-next">{cur
         ? <><b>Step {cur.n} of 5, {cur.label.toLowerCase()}:</b> {cur.next} <span className="muted">({cur.detail})</span></>
-        : <><b>All five steps are complete.</b> Keep monitoring metrics and incidents, and confirm the classification again whenever the system changes.</>}</p>
+        : gaps
+          ? <><b>All five steps are complete. Next, close the gaps:</b> {gaps} gap{gaps === 1 ? '' : 's'} remain. Raise an action for each, with an owner, a department and a due date. <button type="button" className="linkish" onClick={() => go('plan')}>Open the action plan</button></>
+          : <><b>All five steps are complete and no gaps remain.</b> Keep monitoring metrics and incidents, and confirm the classification again whenever the system changes.</>}</p>
     </section>
   );
 }

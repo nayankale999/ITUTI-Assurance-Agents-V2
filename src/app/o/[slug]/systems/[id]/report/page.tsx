@@ -19,7 +19,7 @@ export default async function Report({ params }: { params: Promise<{ slug: strin
   if (!a || a.org.slug !== slug) notFound();
   const sys = a.system.data as AssessmentData;
   const p = sys.profile || {}, r = classify(sys), ir = inherentRisk(sys), rd = readiness(sys), list = applicable(sys), ctrl = sys.ctrl || {};
-  const incidents = await db.incidents.find({ systemId: id }, { orderBy: [['date', 'desc'], ['createdAt', 'desc']] });
+  const incidents = await db.incidents.find({ systemId: id, kind: 'incident' }, { orderBy: [['date', 'desc'], ['createdAt', 'desc']] });
   const st = (s?: string) => ({ met: ['good', 'Met'], partial: ['warn', 'Partial'], gap: ['crit', 'Not met'], na: ['muted', 'N/A'] } as Record<string, string[]>)[s || ''] || ['muted', 'Open'];
   const tier = TIERS[r.tier] || TIERS.unknown;
   // Answers that came from an accepted agent proposal and have not been changed since

@@ -363,6 +363,26 @@ async function main() {
     check('the system page shows the member their tasks', sysPage.includes('Your tasks on this system'));
     check('another client cannot see the tasks', (await get(`/api/systems/${s1.id}/tasks`, c.other)).status === 404);
 
+    // ---------- Gap action plan ----------
+    const plan0 = await (await get(`/api/systems/${s1.id}/actions`, c.clientAdmin)).json();
+    check('the action plan lists the gaps', Array.isArray(plan0.rows) && plan0.rows.length > 0 && plan0.canPlan === true, JSON.stringify(plan0).slice(0, 200));
+    const gapRefs = plan0.rows.slice(0, 3).map((r: any) => r.gap.ref);
+    const raised = await send(`/api/systems/${s1.id}/actions`, 'POST', c.clientAdmin, { items: gapRefs.map((gapRef: string) => ({ gapRef })), ownerId: contrib.id, department: 'Model Risk', due: '2026-12-15' });
+    check('actions are raised against an owner and a department', raised.status === 201 && (await raised.json()).created === 3);
+    const gapRows = await db.incidents.find({ systemId: s1.id, kind: 'gap' });
+    check('each action is kept as a gap action with owner, department and due date', gapRows.length === 3 && gapRows.every(g => g.ownerId === contrib.id && g.department === 'Model Risk' && g.due === '2026-12-15' && g.category === 'Assessment gap'));
+    check('the owner is emailed', logs.join('').includes(`To: ${contrib.email} | ${'3 actions have'}`) || logs.join('').includes(`To: ${contrib.email}`));
+    check('gap actions do not count as open AI incidents', (await db.aiSystems.first({ id: s1.id }))!.openIncidents === (await db.incidents.count({ systemId: s1.id, kind: 'incident', status: ['open', 'investigating', 'mitigated'] })));
+    check('a gap cannot get two open actions', (await send(`/api/systems/${s1.id}/actions`, 'POST', c.clientAdmin, { items: [{ gapRef: gapRefs[0] }], ownerName: 'Someone', department: 'Legal' })).status === 400);
+    check('an owner from outside the organisation must be named, not linked', (await send(`/api/systems/${s1.id}/actions`, 'POST', c.clientAdmin, { items: [{ gapRef: plan0.rows[4].gap.ref }], ownerId: otherClient.id, department: 'Legal' })).status === 400);
+    check('a viewer cannot raise actions', (await send(`/api/systems/${s1.id}/actions`, 'POST', c.viewer, { items: [{ gapRef: plan0.rows[4].gap.ref }], ownerName: 'X', department: 'Legal' })).status === 403);
+    const reassign = await send(`/api/incidents/${gapRows[0].id}`, 'PATCH', c.clientAdmin, { department: 'Legal', ownerName: 'Tom Okafor, DPO', ownerId: null, status: 'investigating' });
+    check('an action can be reassigned and moved along', reassign.status === 200 && (await db.incidents.first({ id: gapRows[0].id }))!.department === 'Legal');
+    check('the tracker shows gap actions', (await (await get(`/o/${orgA.slug}/incidents?view=gaps`, c.viewer)).text()).includes('Gap actions'));
+    check('the remediation plan document opens', (await get(`/o/${orgA.slug}/systems/${s1.id}/plan`, c.viewer)).status === 200);
+    check('ordinary incidents cannot be given a department', (await send(`/api/incidents/${irBody.incident.id}`, 'PATCH', c.clientAdmin, { department: 'X' })).status === 400);
+    check('another client cannot see the action plan', (await get(`/api/systems/${s1.id}/actions`, c.other)).status === 404);
+
     // Self-service sign-up
     check('the sign-up page loads', (await get('/register')).status === 200);
     check('a stranger without a sign-up gets no sign-in link', !(await signInRequest(`${tag}-stranger@newco.test`)).url);

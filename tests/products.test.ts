@@ -101,3 +101,19 @@ test('task scopes unlock exactly the fields they cover', async () => {
   assert.equal(scopeTab('conf:P3'), 'conformity');
   assert.equal(scopeTab('review'), 'agent');
 });
+
+test('gaps come from unmet controls and unconfirmed conformity answers, and pair with their actions', async () => {
+  const { findGaps, planStatus } = await import('../src/lib/gaps');
+  const gaps = findGaps(hr);
+  assert.ok(gaps.some(g => g.ref === 'ctrl:DAT-3' && g.severity === 'high'), 'partial control on a high-risk system is high priority');
+  assert.ok(!gaps.some(g => g.ref === 'ctrl:GOV-1'), 'a met control is not a gap');
+  assert.ok(gaps.some(g => g.ref === 'ctrl:GOV-2' && g.status === 'Not assessed'));
+  assert.ok(gaps.some(g => g.ref === 'conf:P1' && g.status === 'Pre-filled, not confirmed'));
+  const withGap = { ...hr, ctrl: { ...hr.ctrl, 'GOV-2': { s: 'gap', e: 'No accountable executive named.' } } };
+  assert.equal(findGaps(withGap).find(g => g.ref === 'ctrl:GOV-2')!.severity, 'critical');
+  const act = (ref: string, status = 'open') => ({ id: ref, gapRef: ref, status, ownerId: null, ownerName: 'A', department: 'HR', due: '2000-01-01', title: '', notes: '', severity: 'high', date: '' });
+  const p = planStatus(gaps, [act('ctrl:DAT-3'), act('ctrl:GOV-1')]);
+  assert.equal(p.withAction, 1);
+  assert.equal(p.closable.map(a => a.gapRef).join(), 'ctrl:GOV-1');
+  assert.equal(p.overdue, 2);
+});

@@ -9,7 +9,7 @@ export const metadata = { title: 'Incident inventory' };
 export default async function IncidentInventory({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { org } = await orgForPage(slug);
-  const rows = await orgIncidents(org.id);
+  const rows = (await orgIncidents(org.id)).filter(r => r.kind === 'incident');
   return (
     <DocShell back={`/o/${slug}/incidents`} backLabel="Incident tracker" kind="Incident inventory" org={org.name} title="Incident inventory" subtitle={`${rows.length} incident${rows.length === 1 ? '' : 's'} recorded, ${rows.filter(r => isActive(r.status)).length} not yet resolved`}>
       <IncidentTable rows={rows} showSystem />

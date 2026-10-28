@@ -6,7 +6,7 @@ import { lastPlace, forget, type Place } from '@/lib/resume';
 
 const TAB_LABEL: Record<string, string> = {
   agent: 'Evidence and agent', profile: 'Profile', classify: 'Classification', controls: 'Controls', conformity: 'Conformity',
-  report: 'Report', card: 'Model card', monitor: 'Monitoring', team: 'Team',
+  report: 'Report', card: 'Model card', monitor: 'Monitoring', plan: 'Action plan', team: 'Team',
 };
 
 export function ResumeBanner({ slug, systemIds }: { slug?: string; systemIds: string[] }) {

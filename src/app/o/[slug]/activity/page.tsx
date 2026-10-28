@@ -13,7 +13,7 @@ const ACTIONS: Record<string, string> = {
   'incident.created': 'recorded an incident', 'incident.updated': 'updated an incident', 'incident.deleted': 'deleted an incident',
   'review.run': 'ran an AI evidence review',
   'org.registered': 'signed up', 'share.created': 'created a public model card link', 'share.revoked': 'revoked a public model card link',
-  'team.created': 'created a team', 'team.updated': 'updated a team', 'team.deleted': 'deleted a team', 'task.assigned': 'assigned tasks', 'task.updated': 'updated a task',
+  'gap.actions': 'raised gap actions', 'team.created': 'created a team', 'team.updated': 'updated a team', 'team.deleted': 'deleted a team', 'task.assigned': 'assigned tasks', 'task.updated': 'updated a task',
   'proposals.accepted': 'accepted agent proposals', 'proposals.rejected': 'rejected agent proposals', 'agent.completed': 'agent run completed',
 };
 

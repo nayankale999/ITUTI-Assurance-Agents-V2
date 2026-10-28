@@ -17,6 +17,7 @@ export const SYSTEM_DOCS: [string, string, string][] = [
   ['card', 'Model card', 'Purpose, users, limits, model, data, performance, fairness, oversight and contacts. Can be shared by public link.'],
   ['conformity', 'Conformity assessment', 'Organisational, project and technical answers, with which were pre-filled and who confirmed them.'],
   ['technical', 'Technical documentation (Annex IV)', 'The technical file, arranged under the headings of Annex IV of the EU AI Act.'],
+  ['plan', 'Remediation plan', 'Every open gap with the action raised to close it: owner, department, due date and status.'],
   ['audit', 'Audit trail', 'Who recorded or changed each answer, when, and whether it came from a person or the assessment agent.'],
   ['incidents', 'Incident inventory', 'Incidents logged for this system with severity, category, status and legal-review flags.'],
   ['metrics', 'Metrics report', 'Performance, fairness and drift metrics with thresholds, latest readings and history.'],

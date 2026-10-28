@@ -16,6 +16,7 @@ export function scopeOptions(): [string, string, string][] {
     ['review', 'Review all agent proposals', 'Assessment steps'],
     ['card', 'Write the model card', 'Assessment steps'],
     ['monitor', 'Maintain monitoring metrics and incidents', 'Assessment steps'],
+    ['plan', 'Manage the gap action plan', 'Assessment steps'],
     ['controls', 'Assess all controls', 'Controls'],
     ...AREAS.map(([a, l]) => [`ctrlArea:${a}`, `Assess ${l.toLowerCase()} controls`, 'Controls'] as [string, string, string]),
     ...CONTROLS.map(c => [`ctrl:${c.id}`, `Assess control ${c.id}`, 'Single controls'] as [string, string, string]),
@@ -36,6 +37,7 @@ export function scopeTab(s: string): string {
   if (s === 'evidence' || s === 'review') return 'agent';
   if (s === 'card') return 'card';
   if (s === 'monitor') return 'monitor';
+  if (s === 'plan') return 'plan';
   if (s.startsWith('conf')) return 'conformity';
   return 'controls';
 }

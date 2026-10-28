@@ -23,6 +23,8 @@ export type IncidentRow = {
   id: string; systemId: string; title: string; date: string; severity: string; category: string; status: string;
   serious: boolean; notes: string; source: string | null; externalId: string | null; externalUrl: string | null;
   createdById: string | null; createdAt: Date; updatedAt: Date;
+  /** 'incident' for an adverse event; 'gap' for an action raised to close an assessment gap */
+  kind: 'incident' | 'gap'; gapRef: string | null; ownerId: string | null; ownerName: string | null; department: string | null; due: string | null;
 };
 /** role holds a client role (orgId set) or an Ituti staff role (orgId null). Only a hash of the token is stored. */
 export type Invitation = {
@@ -86,6 +88,7 @@ export const DEFS = {
   incidents: def('incidents', ['id'], {
     id: 'str', systemId: 'str', date: 'str', title: 'str', severity: 'str', category: 'str', status: 'str', serious: 'bool', notes: 'str',
     source: 'str?', externalId: 'str?', externalUrl: 'str?', createdById: 'str?', createdAt: 'date', updatedAt: 'date',
+    kind: 'str', gapRef: 'str?', ownerId: 'str?', ownerName: 'str?', department: 'str?', due: 'str?',
   }),
   invitations: def('invitations', ['id'], {
     id: 'str', email: 'str', orgId: 'str?', role: 'str', tokenHash: 'str', invitedById: 'str', expiresAt: 'date', acceptedAt: 'date?', revokedAt: 'date?', createdAt: 'date',
@@ -130,7 +133,7 @@ function makeDb(exec: () => import('mysql2/promise').Pool | PoolConnection, inTx
     assessorAssignments: t<AssessorAssignment>(DEFS.assessorAssignments, () => ({ createdAt: now() })),
     aiSystems: t<AiSystemRow>(DEFS.aiSystems, () => ({ ...withId(), updatedAt: now(), tier: 'unknown', riskScore: null, readiness: 0, openIncidents: 0, version: 1, createdById: null, updatedById: null })),
     systemAssignments: t<SystemAssignment>(DEFS.systemAssignments, () => ({ createdAt: now() })),
-    incidents: t<IncidentRow>(DEFS.incidents, () => ({ ...withId(), updatedAt: now(), status: 'open', serious: false, notes: '', source: null, externalId: null, externalUrl: null, createdById: null })),
+    incidents: t<IncidentRow>(DEFS.incidents, () => ({ ...withId(), updatedAt: now(), status: 'open', serious: false, notes: '', source: null, externalId: null, externalUrl: null, createdById: null, kind: 'incident', gapRef: null, ownerId: null, ownerName: null, department: null, due: null })),
     invitations: t<Invitation>(DEFS.invitations, () => ({ ...withId(), orgId: null, acceptedAt: null, revokedAt: null })),
     auditLog: t<AuditEntry>(DEFS.auditLog, () => ({ ...withId(), updatedAt: now(), orgId: null, systemId: null, userId: null, detail: null })),
     documents: t<DocumentRow>(DEFS.documents, () => ({ ...withId(), pages: 0, chars: 0, status: 'ready', error: null, uploadedById: null })),
@@ -226,6 +229,7 @@ export async function deleteUser(userId: string) {
     await t.apiKeys.update({ createdById: userId }, { createdById: null });
     await t.proposals.update({ decidedById: userId }, { decidedById: null });
     await t.changes.update({ userId }, { userId: null });
+    await t.incidents.update({ ownerId: userId }, { ownerId: null });
     await t.teamMembers.remove({ userId });
     await t.teams.update({ leadId: userId }, { leadId: null });
     await t.tasks.remove({ assigneeId: userId });

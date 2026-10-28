@@ -13,7 +13,7 @@ export default async function Overview({ params }: { params: Promise<{ slug: str
   const d = await systemForDoc(slug, id);
   const sys = d.sys, p = sys.profile || {};
   const j = journey(sys), r = classify(sys), score = regulatoryScore(sys), ir = inherentRisk(sys), rd = readiness(sys), cp = confProgress(sys), a43 = art43(sys), re = reassessment(sys);
-  const incidents = await db.incidents.find({ systemId: id });
+  const incidents = await db.incidents.find({ systemId: id, kind: 'incident' });
   const tier = TIERS[r.tier] || TIERS.unknown;
   const STATE: Record<string, string> = { done: 'Complete', progress: 'In progress', todo: 'Not started' };
   return (

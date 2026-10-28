@@ -6,6 +6,6 @@ export async function GET(_: Request, { params }: { params: Promise<{ slug: stri
   const { slug } = await params;
   const a = await orgForApi(slug); if (!a) return err(404, 'Not found.');
   const rows = await orgIncidents(a.org.id);
-  return csvResponse(`${slug}-incidents.csv`, ['Date', 'AI system', 'Incident', 'Severity', 'Category', 'Status', 'Possible serious incident', 'Legal review', 'Details'],
-    rows.map(r => [r.date, r.system, r.title, r.severity, r.category, statusLabel(r.status), r.serious ? 'Yes' : 'No', legalReview(r) || '', r.notes]));
+  return csvResponse(`${slug}-incidents.csv`, ['Type', 'Date', 'AI system', 'Incident or action', 'Severity', 'Category', 'Status', 'Possible serious incident', 'Legal review', 'Owner', 'Department', 'Due', 'Details'],
+    rows.map(r => [r.kind === 'gap' ? 'Gap action' : 'AI incident', r.date, r.system, r.title, r.severity, r.category, statusLabel(r.status), r.serious ? 'Yes' : 'No', r.kind === 'gap' ? '' : legalReview(r) || '', r.owner, r.department, r.due || '', r.notes]));
 }

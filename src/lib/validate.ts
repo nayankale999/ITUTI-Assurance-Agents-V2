@@ -28,4 +28,16 @@ export const incidentSchema = z.object({
   notes: z.string().max(5000).default(''),
 });
 
-export const incidentPatchSchema = z.object({ status: z.enum(['open', 'investigating', 'mitigated', 'resolved', 'closed']) });
+export const incidentPatchSchema = z.object({
+  status: z.enum(['open', 'investigating', 'mitigated', 'resolved', 'closed']).optional(),
+  // gap actions only
+  ownerId: z.string().max(40).nullable().optional(), ownerName: z.string().trim().max(255).nullable().optional(),
+  department: z.string().trim().max(120).nullable().optional(), due: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  notes: z.string().max(5000).optional(),
+}).refine(x => Object.keys(x).length > 0);
+
+export const gapActionSchema = z.object({
+  items: z.array(z.object({ gapRef: z.string().max(64), notes: z.string().max(5000).optional() })).min(1).max(120),
+  ownerId: z.string().max(40).nullable().optional(), ownerName: z.string().trim().max(255).nullable().optional(),
+  department: z.string().trim().min(1).max(120), due: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+});
