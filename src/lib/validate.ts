@@ -36,6 +36,10 @@ export const incidentPatchSchema = z.object({
   notes: z.string().max(5000).optional(),
 }).refine(x => Object.keys(x).length > 0);
 
+export const planSettingsSchema = z.object({
+  auto: z.boolean(), ownerId: z.string().max(40).nullable().optional(), ownerName: z.string().trim().max(255).nullable().optional(),
+  department: z.string().trim().max(120).nullable().optional(), dueDays: z.number().int().min(1).max(365),
+});
 export const gapActionSchema = z.object({
   items: z.array(z.object({ gapRef: z.string().max(64), notes: z.string().max(5000).optional() })).min(1).max(120),
   ownerId: z.string().max(40).nullable().optional(), ownerName: z.string().trim().max(255).nullable().optional(),

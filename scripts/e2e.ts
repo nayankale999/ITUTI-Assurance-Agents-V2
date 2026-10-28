@@ -400,6 +400,51 @@ async function main() {
     check('ordinary incidents cannot be given a department', (await send(`/api/incidents/${irBody.incident.id}`, 'PATCH', c.clientAdmin, { department: 'X' })).status === 400);
     check('another client cannot see the action plan', (await get(`/api/systems/${s1.id}/actions`, c.other)).status === 404);
 
+    // ---------- Automatic gap actions ----------
+    {
+      const { questionsFor } = await import('../src/lib/conformity');
+      const { contextSnapshot, journey } = await import('../src/lib/journey');
+      const { findGaps } = await import('../src/lib/gaps');
+      const all8 = Object.fromEntries(['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'].map(k => [k, 'no']));
+      const base: any = {
+        profile: { name: 'Auto plan', owner: 'Head of Talent', team: 'HR Technology', description: 'Ranks job applicants', lifecycle: 'prod', func: 'hr', regions: ['eu'], role: ['provider'], aiType: ['ml'],
+          affects: 'staff', personal: 'personal', scale: 's2', autonomy: 'a1', revers: 'r1', vendor: 'In-house', version: '1.3' },
+        cls: { ...all8, a3: { h_emp: true }, t: {}, profiling: 'yes', tNone: 'yes' },
+        ctrl: { 'GOV-1': { s: 'met', e: 'AI policy v2 approved by the board in March 2026.' } },
+      };
+      base.clsOk = { at: '2026-10-01', snap: contextSnapshot(base) };
+      base.conf = Object.fromEntries(questionsFor(base).map(q => [q.id, { t: 'Answered with documents, owners and dates.', ok: true }]));
+      check('the fixture completes all five steps', journey(base).done === 5, JSON.stringify(journey(base).steps.map(x => x.state)));
+      const s4 = await db.aiSystems.insert({ orgId: orgA.id, name: 'Auto plan', data: base });
+      const gaps4 = findGaps(base).length;
+      const st0 = await (await get(`/api/systems/${s4.id}/actions`, c.clientAdmin)).json();
+      check('automatic actions start switched off, with a suggested owner and the profile team as department', st0.settings?.auto === false && st0.settings.department === 'HR Technology' && !!st0.settings.ownerId && st0.journeyDone === true, JSON.stringify(st0.settings));
+      check('a viewer cannot turn on automatic actions', (await send(`/api/systems/${s4.id}/actions`, 'PATCH', c.viewer, { auto: true, ownerId: contrib.id, department: 'Model Risk', dueDays: 14 })).status === 403);
+      check('automatic actions need an owner', (await send(`/api/systems/${s4.id}/actions`, 'PATCH', c.clientAdmin, { auto: true, ownerId: null, department: 'Model Risk', dueDays: 14 })).status === 400);
+      logs.length = 0;
+      const on = await send(`/api/systems/${s4.id}/actions`, 'PATCH', c.clientAdmin, { auto: true, ownerId: contrib.id, department: 'Model Risk', dueDays: 14 });
+      const onBody = await on.json();
+      check('turning on automatic actions on a complete assessment raises one per gap', on.status === 200 && onBody.created === gaps4 && gaps4 > 0, JSON.stringify(onBody));
+      const autoRows = await db.incidents.find({ systemId: s4.id, kind: 'gap' });
+      const due14 = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
+      check('automatic actions carry the default owner, department and due date', autoRows.length === gaps4 && autoRows.every(r => r.ownerId === contrib.id && r.department === 'Model Risk' && r.due === due14));
+      check('the owner gets a task per automatic action and one email', (await db.tasks.count({ systemId: s4.id, assigneeId: contrib.id, status: 'todo' })) === gaps4 && logs.join('').split(`To: ${contrib.email}`).length === 2);
+      const again = await send(`/api/systems/${s4.id}/actions`, 'PATCH', c.clientAdmin, { auto: true, ownerId: contrib.id, department: 'Model Risk', dueDays: 14 });
+      check('saving the settings again raises nothing twice', (await again.json()).created === 0 && (await db.incidents.count({ systemId: s4.id, kind: 'gap' })) === gaps4);
+      const r4 = await (await get(`/api/systems/${s4.id}`, c.clientAdmin)).json();
+      const put4 = await send(`/api/systems/${s4.id}`, 'PUT', c.clientAdmin, { data: { ...r4.data, ctrl: { ...r4.data.ctrl, 'GOV-1': { s: 'gap', e: 'The policy lapsed in September.' } } }, version: r4.version });
+      check('a gap found after a save gets an action automatically', put4.status === 200 && !!(await db.incidents.first({ systemId: s4.id, kind: 'gap', gapRef: 'ctrl:GOV-1', ownerId: contrib.id })));
+      await send(`/api/systems/${s4.id}/actions`, 'PATCH', c.clientAdmin, { auto: false, ownerId: contrib.id, department: 'Model Risk', dueDays: 14 });
+      await db.incidents.remove({ systemId: s4.id, kind: 'gap', gapRef: 'ctrl:GOV-1' });
+      const r5 = await (await get(`/api/systems/${s4.id}`, c.clientAdmin)).json();
+      await send(`/api/systems/${s4.id}`, 'PUT', c.clientAdmin, { data: { ...r5.data, ctrl: { ...r5.data.ctrl, 'GOV-1': { s: 'gap', e: 'Still lapsed.' } } }, version: r5.version });
+      check('with automatic actions off, saving raises nothing', !(await db.incidents.first({ systemId: s4.id, kind: 'gap', gapRef: 'ctrl:GOV-1' })));
+      const inc = { ...base, conf: {} };
+      const s5 = await db.aiSystems.insert({ orgId: orgA.id, name: 'Auto plan early', data: inc });
+      const early = await send(`/api/systems/${s5.id}/actions`, 'PATCH', c.clientAdmin, { auto: true, ownerName: 'Tom Okafor, DPO', department: 'Legal', dueDays: 30 });
+      check('before all five steps are complete, turning it on raises nothing yet', (await early.json()).created === 0 && (await db.incidents.count({ systemId: s5.id, kind: 'gap' })) === 0);
+    }
+
     // Self-service sign-up
     check('the sign-up page loads', (await get('/register')).status === 200);
     check('a stranger without a sign-up gets no sign-in link', !(await signInRequest(`${tag}-stranger@newco.test`)).url);

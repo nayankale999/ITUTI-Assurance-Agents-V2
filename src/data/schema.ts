@@ -95,6 +95,12 @@ export const MIGRATIONS: [string, string[]][] = [
     `ALTER TABLE incidents ADD COLUMN due VARCHAR(10) NULL`,
     `CREATE INDEX ix_inc_kind ON incidents (systemId, kind, status)`,
   ]],
+  ['008_auto_plan_specialists', [
+    `CREATE TABLE IF NOT EXISTS plan_settings (systemId ${ID} PRIMARY KEY, orgId ${ID}, auto TINYINT(1) NOT NULL DEFAULT 0, ownerId VARCHAR(36) NULL,
+      ownerName VARCHAR(255) NULL, department VARCHAR(120) NULL, dueDays INT NOT NULL DEFAULT 30, updatedById ${REF}, updatedAt ${AT}, lastAutoAt ${AT_NULL}) ${T}`,
+    `ALTER TABLE agent_runs ADD COLUMN usage_detail JSON NULL`,
+    `ALTER TABLE agent_runs ADD COLUMN specialist VARCHAR(32) NULL`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */

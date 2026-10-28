@@ -49,8 +49,12 @@ export type RunLogEntry = { at: string; text: string };
 export type AgentRun = {
   id: string; orgId: string; systemId: string; status: 'queued' | 'running' | 'completed' | 'failed'; startedById: string | null; model: string;
   log: RunLogEntry[]; summary: string | null; error: string | null; inputTokens: number; outputTokens: number; proposals: number; source: 'web' | 'a2a';
-  createdAt: Date; heartbeatAt: Date | null; finishedAt: Date | null;
+  createdAt: Date; heartbeatAt: Date | null; finishedAt: Date | null; usage_detail: RunUsage | null; specialist: string | null;
 };
+/** Tokens, estimated cost and time per specialist in one run. */
+export type SpecialistUsage = { calls: number; input: number; output: number; cacheRead: number; cacheWrite: number; costUsd: number; ms: number; proposals: number; tools: number; model: string };
+export type RunUsage = Record<string, SpecialistUsage>;
+export type PlanSettings = { systemId: string; orgId: string; auto: boolean; ownerId: string | null; ownerName: string | null; department: string | null; dueDays: number; updatedById: string | null; updatedAt: Date; lastAutoAt: Date | null };
 export type Proposal = {
   id: string; runId: string; systemId: string; path: string; label: string; value: unknown; previous: unknown; rationale: string;
   sources: Source[]; confidence: 'high' | 'medium' | 'low'; status: 'pending' | 'accepted' | 'rejected' | 'superseded';
@@ -104,7 +108,9 @@ export const DEFS = {
   agentRuns: def('agent_runs', ['id'], {
     id: 'str', orgId: 'str', systemId: 'str', status: 'str', startedById: 'str?', model: 'str', log: 'json', summary: 'str?', error: 'str?',
     inputTokens: 'int', outputTokens: 'int', proposals: 'int', source: 'str', createdAt: 'date', heartbeatAt: 'date?', finishedAt: 'date?',
+    usage_detail: 'json?', specialist: 'str?',
   }),
+  planSettings: def('plan_settings', ['systemId'], { systemId: 'str', orgId: 'str', auto: 'bool', ownerId: 'str?', ownerName: 'str?', department: 'str?', dueDays: 'int', updatedById: 'str?', updatedAt: 'date', lastAutoAt: 'date?' }),
   apiKeys: def('api_keys', ['id'], { id: 'str', orgId: 'str', name: 'str', prefix: 'str', keyHash: 'str', createdById: 'str?', createdAt: 'date', lastUsedAt: 'date?', revokedAt: 'date?' }),
   usage: def('usage_events', ['id'], { id: 'str', orgId: 'str', kind: 'str', systemId: 'str?', runId: 'str?', source: 'str', billable: 'bool', plan: 'str', createdAt: 'date', reportedAt: 'date?' }),
   a2aTasks: def('a2a_tasks', ['id'], { id: 'str', orgId: 'str', contextId: 'str', task: 'json', createdAt: 'date', updatedAt: 'date' }),
@@ -139,7 +145,8 @@ function makeDb(exec: () => import('mysql2/promise').Pool | PoolConnection, inTx
     documents: t<DocumentRow>(DEFS.documents, () => ({ ...withId(), pages: 0, chars: 0, status: 'ready', error: null, uploadedById: null })),
     chunks: t<ChunkRow>(DEFS.chunks, () => ({ id: randomUUID() })),
     models: t<ModelRow>(DEFS.models, () => ({ ...withId(), updatedAt: now(), status: 'researching', dossier: null, sources: null, error: null, researchedAt: null })),
-    agentRuns: t<AgentRun>(DEFS.agentRuns, () => ({ ...withId(), status: 'queued', startedById: null, log: [], summary: null, error: null, inputTokens: 0, outputTokens: 0, proposals: 0, source: 'web', heartbeatAt: null, finishedAt: null })),
+    agentRuns: t<AgentRun>(DEFS.agentRuns, () => ({ ...withId(), status: 'queued', startedById: null, log: [], summary: null, error: null, inputTokens: 0, outputTokens: 0, proposals: 0, source: 'web', heartbeatAt: null, finishedAt: null, usage_detail: null, specialist: null })),
+    planSettings: t<PlanSettings>(DEFS.planSettings, () => ({ auto: false, ownerId: null, ownerName: null, department: null, dueDays: 30, updatedById: null, updatedAt: now(), lastAutoAt: null })),
     apiKeys: t<ApiKey>(DEFS.apiKeys, () => ({ ...withId(), createdById: null, lastUsedAt: null, revokedAt: null })),
     usage: t<UsageEvent>(DEFS.usage, () => ({ ...withId(), systemId: null, runId: null, reportedAt: null })),
     a2aTasks: t<A2ATaskRow>(DEFS.a2aTasks, () => ({ createdAt: now(), updatedAt: now() })),
@@ -186,6 +193,7 @@ export async function deleteSystems(ids: string[]) {
     await t.tasks.remove({ systemId: ids });
     await t.teamSystems.remove({ systemId: ids });
     await t.shares.remove({ systemId: ids });
+    await t.planSettings.remove({ systemId: ids });
     await t.agentRuns.remove({ systemId: ids });
     await t.aiSystems.remove({ id: ids });
   });
@@ -234,6 +242,8 @@ export async function deleteUser(userId: string) {
     await t.teams.update({ leadId: userId }, { leadId: null });
     await t.tasks.remove({ assigneeId: userId });
     await t.tasks.update({ createdById: userId }, { createdById: null });
+    await t.planSettings.update({ ownerId: userId }, { ownerId: null, auto: false });
+    await t.planSettings.update({ updatedById: userId }, { updatedById: null });
     await t.shares.update({ createdById: userId }, { createdById: null });
     await t.users.remove({ id: userId });
   });

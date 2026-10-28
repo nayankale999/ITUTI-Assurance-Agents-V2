@@ -1,7 +1,8 @@
 import { db } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
-import { gapActionSchema } from '@/lib/validate';
-import { planFor, owners, notifyOwner, giveOwnerTasks } from '@/lib/plan';
+import { gapActionSchema, planSettingsSchema } from '@/lib/validate';
+import { planFor, owners, raiseActions, planSettings, autoRaise } from '@/lib/plan';
+import { journey } from '@/lib/journey';
 import { audit } from '@/lib/audit';
 import type { AssessmentData } from '@/lib/assurance';
 
@@ -12,8 +13,16 @@ export async function GET(_: Request, { params }: Ctx) {
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
-  const plan = await planFor(id, a.system.data as AssessmentData);
-  return json({ ...plan, ...(await owners(a.org.id)), canPlan: canPlan(a) });
+  const data = a.system.data as AssessmentData;
+  const plan = await planFor(id, data);
+  const { updatedById: _u, orgId: _o, systemId: _s, ...settings } = await planSettings(a.system, v);
+  return json({ ...plan, ...(await owners(a.org.id)), canPlan: canPlan(a), settings, journeyDone: journey(data).done >= 5 });
+}
+
+async function memberOwner(orgId: string, ownerId: string | null | undefined) {
+  if (!ownerId) return null;
+  const owner = await db.users.first({ id: ownerId, disabled: false });
+  return owner && (await db.memberships.first({ orgId, userId: ownerId })) ? owner : undefined;
 }
 
 /** Raises one action per gap, all against the same owner and department. */
@@ -27,29 +36,31 @@ export async function POST(req: Request, { params }: Ctx) {
   if (!p.success) return err(400, 'Choose the gaps, an owner and a department.');
   const { items, ownerId, ownerName, department, due } = p.data;
   if (!ownerId && !ownerName) return err(400, 'Name an owner for the actions.');
-  const owner = ownerId ? await db.users.first({ id: ownerId }) : null;
-  if (ownerId && (!owner || !(await db.memberships.first({ orgId: a.org.id, userId: ownerId })))) return err(400, 'The owner must be a member of this organisation, or enter a name instead.');
-  const plan = await planFor(id, a.system.data as AssessmentData);
-  const gaps = new Map(plan.gaps.map(g => [g.ref, g]));
-  const taken = new Set(plan.rows.filter(r => r.action && !r.awaitingUpdate).map(r => r.gap.ref));
-  const fresh = items.filter(i => gaps.has(i.gapRef) && !taken.has(i.gapRef));
-  if (!fresh.length) return err(400, 'These gaps already have open actions, or have been closed.');
-  const today = new Date().toISOString().slice(0, 10);
-  const rows = await db.incidents.insertMany(fresh.map(i => {
-    const g = gaps.get(i.gapRef)!;
-    return {
-      systemId: id, kind: 'gap' as const, gapRef: g.ref, title: g.title.slice(0, 300), date: today, severity: g.severity, category: 'Assessment gap',
-      status: 'open', serious: false, notes: (i.notes?.trim() || g.suggested).slice(0, 5000), ownerId: owner?.id || null,
-      ownerName: owner ? (owner.name || owner.email) : ownerName!.slice(0, 255), department, due: due || null, createdById: v.id,
-    };
-  }));
-  if (owner) await giveOwnerTasks({ orgId: a.org.id, systemId: id, ownerId: owner.id, gapRefs: rows.map(r => r.gapRef!).filter(Boolean), due: due || null, by: v.id });
-  await audit({ orgId: a.org.id, systemId: id, userId: v.id, action: 'gap.actions', detail: { title: `${rows.length} action${rows.length === 1 ? '' : 's'} for ${department}` } });
-  // Only people who can sign in are emailed: the link is useless to an owner outside the platform
-  const email = owner?.email || null;
-  if (email) {
-    const base = (process.env.NEXTAUTH_URL || '').replace(/\/$/, '');
-    await notifyOwner(email, rows.length, String((a.system.data as AssessmentData).profile?.name || a.system.name), `${base}/o/${a.org.slug}/systems/${id}?tab=plan`, due || null, v.name || v.email);
-  }
-  return json({ created: rows.length }, 201);
+  const owner = await memberOwner(a.org.id, ownerId);
+  if (owner === undefined) return err(400, 'The owner must be a member of this organisation, or enter a name instead.');
+  const created = await raiseActions({ org: a.org, system: a.system, items, owner, ownerName, department, due: due || null, by: { id: v.id, name: v.name || v.email } });
+  if (!created) return err(400, 'These gaps already have open actions, or have been closed.');
+  return json({ created }, 201);
+}
+
+/** Saves the automatic action settings. Turning them on raises actions straight away when the assessment is complete. */
+export async function PATCH(req: Request, { params }: Ctx) {
+  const bad = sameOriginJson(req); if (bad) return err(400, bad);
+  const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
+  const { id } = await params;
+  const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
+  if (!canPlan(a)) return err(403, 'You cannot change the action plan of this system.');
+  const p = planSettingsSchema.safeParse(await req.json().catch(() => null));
+  if (!p.success) return err(400, 'Check the owner, department and number of days.');
+  const s = p.data;
+  const owner = await memberOwner(a.org.id, s.ownerId);
+  if (owner === undefined) return err(400, 'The owner must be a member of this organisation, or enter a name instead.');
+  if (s.auto && !owner && !s.ownerName) return err(400, 'Choose who owns the actions raised automatically.');
+  if (s.auto && !s.department) return err(400, 'Enter the department responsible.');
+  const row = { orgId: a.org.id, auto: s.auto, ownerId: owner?.id || null, ownerName: owner ? null : s.ownerName || null, department: s.department || null, dueDays: s.dueDays, updatedById: v.id, updatedAt: new Date() };
+  if (await db.planSettings.first({ systemId: id })) await db.planSettings.update({ systemId: id }, row);
+  else await db.planSettings.insert({ systemId: id, ...row });
+  await audit({ orgId: a.org.id, systemId: id, userId: v.id, action: 'gap.settings', detail: { title: s.auto ? `Automatic actions on, owner ${owner ? owner.name || owner.email : s.ownerName}` : 'Automatic actions off' } });
+  const created = s.auto ? await autoRaise(id) : 0;
+  return json({ ok: true, created });
 }

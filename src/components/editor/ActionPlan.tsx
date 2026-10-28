@@ -6,7 +6,8 @@ import { INCIDENT_STATUSES, sevTone, statusLabel } from '@/lib/incidents';
 import type { Gap, GapAction } from '@/lib/gaps';
 
 type Row = { gap: Gap; action: GapAction | null; awaitingUpdate: boolean };
-type Data = { rows: Row[]; closable: GapAction[]; actions: GapAction[]; withAction: number; withoutAction: number; awaitingUpdate: number; overdue: number; people: { id: string; name: string; email: string }[]; departments: string[]; canPlan: boolean };
+type Settings = { auto: boolean; ownerId: string | null; ownerName: string | null; department: string | null; dueDays: number; saved: boolean; lastAutoAt: string | null };
+type Data = { settings: Settings; rows: Row[]; closable: GapAction[]; actions: GapAction[]; withAction: number; withoutAction: number; awaitingUpdate: number; overdue: number; people: { id: string; name: string; email: string }[]; departments: string[]; canPlan: boolean; journeyDone: boolean };
 
 async function call(url: string, method: string, body?: unknown) {
   const r = await fetch(url, { method, headers: body === undefined ? {} : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -24,9 +25,39 @@ export function ActionPlan({ systemId, settle, goTo, journeyDone }: { systemId: 
   const [kind, setKind] = useState<'all' | 'control' | 'conformity'>('all');
   const [msg, setMsg] = useState<{ ok?: string; err?: string }>({});
   const [busy, setBusy] = useState(false);
+  const [auto, setAuto] = useState<{ on: boolean; owner: string; ownerName: string; dept: string; days: number } | null>(null);
+  const [autoBusy, setAutoBusy] = useState(false);
 
-  const load = useCallback(async () => { await settle(); const r = await call(`/api/systems/${systemId}/actions`, 'GET'); if (r.ok) setD(r.body as Data); }, [systemId, settle]);
+  const load = useCallback(async () => {
+    await settle();
+    const r = await call(`/api/systems/${systemId}/actions`, 'GET');
+    if (!r.ok) return;
+    const data = r.body as Data;
+    setD(data);
+    const s = data.settings;
+    setAuto(prev => prev || { on: s.auto, owner: s.ownerId || (s.ownerName ? 'other' : ''), ownerName: s.ownerName || '', dept: s.department || '', days: s.dueDays });
+  }, [systemId, settle]);
   useEffect(() => { load(); }, [load]);
+
+  async function saveAuto(on: boolean) {
+    if (!auto) return;
+    if (on && (!auto.owner || (auto.owner === 'other' && !auto.ownerName.trim()))) { setMsg({ err: 'Choose who owns the actions raised automatically.' }); return; }
+    if (on && !auto.dept.trim()) { setMsg({ err: 'Enter the department responsible for the automatic actions.' }); return; }
+    setAutoBusy(true);
+    const r = await call(`/api/systems/${systemId}/actions`, 'PATCH', {
+      auto: on, dueDays: Math.max(1, Math.min(365, Math.round(auto.days) || 30)), department: auto.dept.trim() || null,
+      ...(auto.owner === 'other' ? { ownerId: null, ownerName: auto.ownerName.trim() } : { ownerId: auto.owner || null, ownerName: null }),
+    });
+    setAutoBusy(false);
+    if (!r.ok) { setMsg({ err: r.body.error || 'Could not save the settings.' }); return; }
+    setAuto({ ...auto, on });
+    const n = r.body.created as number;
+    setMsg({ ok: !on ? 'Automatic actions are off. Raise actions by hand below.'
+      : n ? `Automatic actions are on. ${n} action${n === 1 ? ' was' : 's were'} raised now for the open gaps${auto.owner !== 'other' ? ', and the owner has been emailed' : ''}.`
+      : d?.journeyDone ? 'Automatic actions are on. Every gap already has an action; new gaps will get one when the assessment is saved.'
+      : 'Automatic actions are on. Actions will be raised for every gap once all five assessment steps are complete.' });
+    load();
+  }
 
   const rows = useMemo(() => (d?.rows || []).filter(r => kind === 'all' || r.gap.kind === kind), [d, kind]);
   const open = rows.filter(r => !r.action);
@@ -77,6 +108,25 @@ export function ActionPlan({ systemId, settle, goTo, journeyDone }: { systemId: 
         </div>
         {total > 0 && <div className="plan-bar" aria-label={`${d.withAction} of ${total} gaps have an action`}><i style={{ width: `${d.withAction / total * 100}%` }} /></div>}
       </div></section>
+
+      {auto && (d.canPlan || auto.on) && (
+        <section className="panel auto-plan"><header><div><h3>Automatic actions</h3>
+          <small className="muted">{auto.on
+            ? (d.journeyDone ? 'On. Every gap gets an action as soon as the assessment is saved, against the owner and department below.' : 'On. When all five assessment steps are complete, every gap gets an action against the owner and department below.')
+            : 'Raise an action for every gap automatically once all five assessment steps are complete, and for any gap found after that.'}</small></div>
+          {d.canPlan && <><div className="spacer" /><label className="switch"><input type="checkbox" checked={auto.on} disabled={autoBusy} onChange={e => saveAuto(e.target.checked)} /><span>{auto.on ? 'On' : 'Off'}</span></label></>}</header>
+          {d.canPlan && <div className="body raise auto-form">
+            <label className="field"><span>Default owner</span>
+              <select value={auto.owner} onChange={e => setAuto({ ...auto, owner: e.target.value })}><option value="">Choose…</option>
+                {d.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}<option value="other">Someone not on the platform…</option></select></label>
+            {auto.owner === 'other' && <label className="field"><span>Owner&rsquo;s name and role</span><input type="text" value={auto.ownerName} onChange={e => setAuto({ ...auto, ownerName: e.target.value })} maxLength={255} /></label>}
+            <label className="field"><span>Department</span><input type="text" list="plan-depts" value={auto.dept} onChange={e => setAuto({ ...auto, dept: e.target.value })} maxLength={120} placeholder="e.g. Model Risk" /></label>
+            <label className="field"><span>Due in (days)</span><input type="number" min={1} max={365} value={auto.days} onChange={e => setAuto({ ...auto, days: Number(e.target.value) })} style={{ width: 90 }} /></label>
+            {auto.on && <button type="button" className="btn" disabled={autoBusy} onClick={() => saveAuto(true)}>{autoBusy ? 'Saving…' : 'Save changes'}</button>}
+          </div>}
+          {!d.canPlan && <div className="body muted" style={{ fontSize: 13 }}>Owner: {d.people.find(p => p.id === d.settings.ownerId)?.name || d.settings.ownerName || 'not set'} · {d.settings.department} · due {d.settings.dueDays} days after raising</div>}
+        </section>
+      )}
 
       {d.closable.length > 0 && (
         <section className="panel"><header><div><h3>Ready to close</h3><small className="muted">The gap behind these actions has been closed in the assessment.</small></div></header>
