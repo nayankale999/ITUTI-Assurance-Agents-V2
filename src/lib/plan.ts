@@ -53,3 +53,22 @@ export async function closeOwnerTask(systemId: string, ownerId: string | null, g
   const now = new Date();
   await db.tasks.update({ systemId, assigneeId: ownerId, scope: gapRef, status: ['todo', 'doing'] }, { status: 'done', doneAt: now, updatedAt: now });
 }
+
+/** After the assessment changes: an action owner's task closes once the gap behind the action is closed. */
+export async function syncGapTasks(systemId: string, data: AssessmentData) {
+  try {
+    const actions = await db.incidents.find({ systemId, kind: 'gap' }, { columns: ['ownerId', 'gapRef'] });
+    const linked = actions.filter(a => a.ownerId && a.gapRef);
+    if (!linked.length) return;
+    const open = new Set(findGaps(data).map(g => g.ref));
+    for (const a of linked) if (!open.has(a.gapRef!)) await closeOwnerTask(systemId, a.ownerId, a.gapRef);
+  } catch (e) { console.error('[plan] task sync failed', e); }
+}
+
+/** Whether a task is an action owner's task whose gap is still open (so it cannot be marked done yet). */
+export async function gapStillOpen(task: { systemId: string; assigneeId: string; scope: string }) {
+  const action = await db.incidents.first({ systemId: task.systemId, kind: 'gap', ownerId: task.assigneeId, gapRef: task.scope });
+  if (!action) return false;
+  const sys = await db.aiSystems.first({ id: task.systemId }, { columns: ['data'] });
+  return findGaps((sys?.data || {}) as AssessmentData).some(g => g.ref === task.scope);
+}

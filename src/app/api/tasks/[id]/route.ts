@@ -3,6 +3,7 @@ import { db } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
 import { taskView } from '@/lib/teamwork';
 import { audit } from '@/lib/audit';
+import { gapStillOpen } from '@/lib/plan';
 
 type Ctx = { params: Promise<{ id: string }> };
 const patch = z.object({ status: z.enum(['todo', 'doing', 'done']).optional(), due: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), note: z.string().max(1000).optional() });
@@ -27,6 +28,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const p = patch.safeParse(await req.json().catch(() => null));
   if (!p.success) return err(400, 'Invalid change.');
   if (!a.canAllocate && (p.data.due !== undefined || p.data.note !== undefined)) return err(403, 'Only the team lead can change the due date or note.');
+  if (p.data.status === 'done' && task.status !== 'done' && await gapStillOpen(task)) {
+    return err(409, 'This task belongs to a gap action. It closes by itself once the gap is closed in the assessment: set the control to Met with its evidence, or confirm the conformity answer.');
+  }
   const now = new Date();
   const change = { ...p.data, updatedAt: now, ...(p.data.status ? { doneAt: p.data.status === 'done' ? now : null } : {}) };
   const [row] = await db.tasks.update({ id }, change);

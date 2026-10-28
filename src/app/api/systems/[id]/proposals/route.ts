@@ -6,6 +6,7 @@ import { summarise } from '@/lib/summary';
 import { audit } from '@/lib/audit';
 import { recordChanges } from '@/lib/history';
 import { proposalAllowed } from '@/lib/tasks';
+import { syncGapTasks } from '@/lib/plan';
 import type { AssessmentData } from '@/lib/assurance';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -67,5 +68,6 @@ export async function POST(req: Request, { params }: Ctx) {
   if ('error' in out) return err(400, out.error);
   await audit({ orgId: a.system.orgId, systemId: id, userId: v.id, action: action === 'accept' ? 'proposals.accepted' : 'proposals.rejected', detail: { count: out.count, edited } });
   if (action === 'accept' && before) await recordChanges({ orgId: a.system.orgId, systemId: id, userId: v.id, via: 'agent', before, after: out.data });
+  if (action === 'accept') await syncGapTasks(id, out.data);
   return json(out);
 }

@@ -34,11 +34,12 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (r.inc.kind === 'gap') {
     const ownerChanged = rest.ownerId !== undefined && rest.ownerId !== r.inc.ownerId;
     const finished = status === 'resolved' || status === 'closed';
-    // The owner's task follows the action: it closes with the action, and moves if the owner changes
-    if (finished || ownerChanged) await closeOwnerTask(r.inc.systemId, r.inc.ownerId, r.inc.gapRef);
+    // The owner's task stays open until the gap is closed in the assessment, even once the action is resolved,
+    // so the owner sees it through; it moves to the new owner if the action is reassigned.
+    if (ownerChanged) await closeOwnerTask(r.inc.systemId, r.inc.ownerId, r.inc.gapRef);
     const newOwner = ownerChanged ? rest.ownerId : r.inc.ownerId;
     const reopened = status && !finished && ['resolved', 'closed'].includes(r.inc.status);
-    if (newOwner && r.inc.gapRef && !finished && (ownerChanged || reopened)) await giveOwnerTasks({ orgId: r.a.org.id, systemId: r.inc.systemId, ownerId: newOwner, gapRefs: [r.inc.gapRef], due: rest.due ?? r.inc.due, by: r.v.id });
+    if (newOwner && r.inc.gapRef && (ownerChanged || reopened)) await giveOwnerTasks({ orgId: r.a.org.id, systemId: r.inc.systemId, ownerId: newOwner, gapRefs: [r.inc.gapRef], due: rest.due ?? r.inc.due, by: r.v.id });
   }
   const open = await refreshIncidentCount(r.inc.systemId);
   await audit({ orgId: r.a.system.orgId, systemId: r.inc.systemId, userId: r.v.id, action: 'incident.updated', detail: { title: r.inc.title, status: status || 'details' } });

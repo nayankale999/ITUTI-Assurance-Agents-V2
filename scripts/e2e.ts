@@ -381,7 +381,18 @@ async function main() {
     check('the action owner gets a task for each gap', (await db.tasks.count({ systemId: s1.id, assigneeId: contrib.id, scope: gapRefs })) === 3);
     check('reassigning the action closes the old owner\'s task', (await db.tasks.first({ systemId: s1.id, assigneeId: contrib.id, scope: gapRows[0].gapRef! }))?.status === 'done');
     await send(`/api/incidents/${gapRows[1].id}`, 'PATCH', c.clientAdmin, { status: 'resolved' });
-    check('resolving the action closes the owner\'s task', (await db.tasks.first({ systemId: s1.id, assigneeId: contrib.id, scope: gapRows[1].gapRef! }))?.status === 'done');
+    const ownerTask = await db.tasks.first({ systemId: s1.id, assigneeId: contrib.id, scope: gapRows[1].gapRef! });
+    check('resolving the action keeps the owner\'s task open while the gap is open', ownerTask?.status === 'todo');
+    check('the owner cannot mark that task done before the gap is closed', (await send(`/api/tasks/${ownerTask!.id}`, 'PATCH', c.contrib, { status: 'done' })).status === 409);
+    const plan1 = await (await get(`/api/systems/${s1.id}/actions`, c.clientAdmin)).json();
+    check('the resolved action stays on its gap, awaiting the assessment update', plan1.rows.some((r: any) => r.gap.ref === gapRows[1].gapRef && r.awaitingUpdate));
+    {
+      const r = await (await get(`/api/systems/${s1.id}`, c.clientAdmin)).json();
+      const [k, key] = gapRows[1].gapRef!.split(':');
+      const data = k === 'ctrl' ? { ...r.data, ctrl: { ...r.data.ctrl, [key]: { s: 'met', e: 'Closed by the action owner with evidence.' } } } : { ...r.data, conf: { ...(r.data.conf || {}), [key]: { t: 'Answered and confirmed.', ok: true } } };
+      await send(`/api/systems/${s1.id}`, 'PUT', c.contrib, { data, version: r.version });
+    }
+    check('closing the gap in the assessment closes the owner\'s task', (await db.tasks.first({ id: ownerTask!.id }))?.status === 'done');
     await send(`/api/incidents/${gapRows[2].id}`, 'PATCH', c.clientAdmin, { ownerId: member.id });
     check('a new owner gets the task', !!(await db.tasks.first({ systemId: s1.id, assigneeId: member.id, scope: gapRows[2].gapRef!, status: 'todo' })) && (await db.incidents.first({ id: gapRows[2].id }))!.ownerName === member.email);
     check('the tracker shows gap actions', (await (await get(`/o/${orgA.slug}/incidents?view=gaps`, c.viewer)).text()).includes('Gap actions'));

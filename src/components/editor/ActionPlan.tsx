@@ -131,7 +131,7 @@ export function ActionPlan({ systemId, settle, goTo, journeyDone }: { systemId: 
                   {d.canPlan
                     ? <select aria-label="Action status" value={a.status} style={{ width: 'auto', marginTop: 6 }} onChange={e => update(a.id, { status: e.target.value })}>{INCIDENT_STATUSES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
                     : <span className="pill t-info" style={{ marginTop: 6 }}>{statusLabel(a.status)}</span>}
-                  {awaitingUpdate && <div className="await-note">Action {statusLabel(a.status).toLowerCase()}. The gap stays open until the assessment shows it: {g.kind === 'control' ? `set ${g.ref.slice(5)} to Met and record the evidence` : 'confirm the answer'}.{' '}
+                  {awaitingUpdate && <div className="await-note">Action {statusLabel(a.status).toLowerCase()}. The gap, and the owner’s task, stay open until the assessment shows it: {g.kind === 'control' ? `set ${g.ref.slice(5)} to Met and record the evidence` : 'confirm the answer'}.{' '}
                     <button type="button" className="linkish" onClick={() => goTo(g.kind === 'control' ? 'controls' : 'conformity', g.ref)}>Update the assessment</button></div>}
                 </> : <span className="pill t-warn">Needs an action</span>}</td>
               </tr>

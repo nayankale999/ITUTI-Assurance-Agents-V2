@@ -5,6 +5,7 @@ import { assessmentSchema } from '@/lib/validate';
 import { summarise } from '@/lib/summary';
 import { audit } from '@/lib/audit';
 import { recordChanges, diff } from '@/lib/history';
+import { syncGapTasks } from '@/lib/plan';
 import { pathAllowed, scopeLabel } from '@/lib/tasks';
 import type { AssessmentData } from '@/lib/assurance';
 
@@ -52,6 +53,7 @@ export async function PUT(req: Request, { params }: Ctx) {
   const row = outcome.saved;
   if (sections.length) await audit({ orgId: a.system.orgId, systemId: id, userId: v.id, action: 'system.updated', detail: { sections } });
   await recordChanges({ orgId: a.system.orgId, systemId: id, userId: v.id, via: 'editor', before: prev as AssessmentData, after: data });
+  await syncGapTasks(id, data);
   return json({ version: row.version, updatedAt: row.updatedAt });
 }
 
