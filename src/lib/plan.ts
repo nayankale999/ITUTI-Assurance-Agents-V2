@@ -34,3 +34,22 @@ export async function notifyOwner(email: string, count: number, systemName: stri
     url,
   }).catch(e => console.error('[plan] email failed', e));
 }
+
+/* An action owner who can sign in also gets a task for the gap, so they can edit exactly the control or
+ * conformity question behind it. The task closes when the action is resolved or closed, and follows the action
+ * if it is reassigned. The gap reference ('ctrl:GOV-3', 'conf:P5') is already a task scope. */
+export async function giveOwnerTasks(opts: { orgId: string; systemId: string; ownerId: string; gapRefs: string[]; due: string | null; by: string }) {
+  if (!opts.gapRefs.length) return 0;
+  const open = await db.tasks.find({ systemId: opts.systemId, assigneeId: opts.ownerId, scope: opts.gapRefs, status: ['todo', 'doing'] });
+  const fresh = opts.gapRefs.filter(r => !open.some(t => t.scope === r));
+  if (!fresh.length) return 0;
+  const team = (await db.teamSystems.find({ systemId: opts.systemId }))[0]?.teamId || null;
+  await db.tasks.insertMany(fresh.map(scope => ({ orgId: opts.orgId, systemId: opts.systemId, teamId: team, assigneeId: opts.ownerId, scope, due: opts.due, note: 'Close the gap recorded in the action plan.', createdById: opts.by })));
+  return fresh.length;
+}
+
+export async function closeOwnerTask(systemId: string, ownerId: string | null, gapRef: string | null) {
+  if (!ownerId || !gapRef) return;
+  const now = new Date();
+  await db.tasks.update({ systemId, assigneeId: ownerId, scope: gapRef, status: ['todo', 'doing'] }, { status: 'done', doneAt: now, updatedAt: now });
+}

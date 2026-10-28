@@ -43,7 +43,7 @@ export function ActionPlan({ systemId, settle, goTo, journeyDone }: { systemId: 
       ...(owner === 'other' ? { ownerName: ownerName.trim() } : { ownerId: owner }),
     });
     setBusy(false);
-    if (r.ok) { setMsg({ ok: `Raised ${r.body.created} action${r.body.created === 1 ? '' : 's'}${owner !== 'other' ? ' and emailed the owner' : ''}. They also appear in the Incident tracker under Gap actions.` }); setSel(new Set()); load(); }
+    if (r.ok) { setMsg({ ok: `Raised ${r.body.created} action${r.body.created === 1 ? '' : 's'}${owner !== 'other' ? '. The owner has been emailed and given a task for each gap, so they can edit those items' : ''}. They also appear in the Incident tracker under Gap actions.` }); setSel(new Set()); load(); }
     else setMsg({ err: r.body.error || 'Could not raise the actions.' });
   }
   async function update(id: string, change: Record<string, unknown>) {

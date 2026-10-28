@@ -378,6 +378,12 @@ async function main() {
     check('a viewer cannot raise actions', (await send(`/api/systems/${s1.id}/actions`, 'POST', c.viewer, { items: [{ gapRef: plan0.rows[4].gap.ref }], ownerName: 'X', department: 'Legal' })).status === 403);
     const reassign = await send(`/api/incidents/${gapRows[0].id}`, 'PATCH', c.clientAdmin, { department: 'Legal', ownerName: 'Tom Okafor, DPO', ownerId: null, status: 'investigating' });
     check('an action can be reassigned and moved along', reassign.status === 200 && (await db.incidents.first({ id: gapRows[0].id }))!.department === 'Legal');
+    check('the action owner gets a task for each gap', (await db.tasks.count({ systemId: s1.id, assigneeId: contrib.id, scope: gapRefs })) === 3);
+    check('reassigning the action closes the old owner\'s task', (await db.tasks.first({ systemId: s1.id, assigneeId: contrib.id, scope: gapRows[0].gapRef! }))?.status === 'done');
+    await send(`/api/incidents/${gapRows[1].id}`, 'PATCH', c.clientAdmin, { status: 'resolved' });
+    check('resolving the action closes the owner\'s task', (await db.tasks.first({ systemId: s1.id, assigneeId: contrib.id, scope: gapRows[1].gapRef! }))?.status === 'done');
+    await send(`/api/incidents/${gapRows[2].id}`, 'PATCH', c.clientAdmin, { ownerId: member.id });
+    check('a new owner gets the task', !!(await db.tasks.first({ systemId: s1.id, assigneeId: member.id, scope: gapRows[2].gapRef!, status: 'todo' })) && (await db.incidents.first({ id: gapRows[2].id }))!.ownerName === member.email);
     check('the tracker shows gap actions', (await (await get(`/o/${orgA.slug}/incidents?view=gaps`, c.viewer)).text()).includes('Gap actions'));
     check('the remediation plan document opens', (await get(`/o/${orgA.slug}/systems/${s1.id}/plan`, c.viewer)).status === 200);
     check('ordinary incidents cannot be given a department', (await send(`/api/incidents/${irBody.incident.id}`, 'PATCH', c.clientAdmin, { department: 'X' })).status === 400);

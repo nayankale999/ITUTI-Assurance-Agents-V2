@@ -2,6 +2,7 @@ import { db } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson, refreshIncidentCount } from '@/lib/api';
 import { incidentPatchSchema } from '@/lib/validate';
 import { audit } from '@/lib/audit';
+import { giveOwnerTasks, closeOwnerTask } from '@/lib/plan';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -28,7 +29,17 @@ export async function PATCH(req: Request, { params }: Ctx) {
     const m = await db.memberships.first({ orgId: r.a.org.id, userId: rest.ownerId });
     if (!m) return err(400, 'The owner must be a member of this organisation, or enter a name instead.');
   }
+  if (rest.ownerId) { const u = await db.users.first({ id: rest.ownerId }); if (u) rest.ownerName = u.name || u.email; }
   await db.incidents.update({ id }, { ...rest, ...(status ? { status } : {}), updatedAt: new Date() });
+  if (r.inc.kind === 'gap') {
+    const ownerChanged = rest.ownerId !== undefined && rest.ownerId !== r.inc.ownerId;
+    const finished = status === 'resolved' || status === 'closed';
+    // The owner's task follows the action: it closes with the action, and moves if the owner changes
+    if (finished || ownerChanged) await closeOwnerTask(r.inc.systemId, r.inc.ownerId, r.inc.gapRef);
+    const newOwner = ownerChanged ? rest.ownerId : r.inc.ownerId;
+    const reopened = status && !finished && ['resolved', 'closed'].includes(r.inc.status);
+    if (newOwner && r.inc.gapRef && !finished && (ownerChanged || reopened)) await giveOwnerTasks({ orgId: r.a.org.id, systemId: r.inc.systemId, ownerId: newOwner, gapRefs: [r.inc.gapRef], due: rest.due ?? r.inc.due, by: r.v.id });
+  }
   const open = await refreshIncidentCount(r.inc.systemId);
   await audit({ orgId: r.a.system.orgId, systemId: r.inc.systemId, userId: r.v.id, action: 'incident.updated', detail: { title: r.inc.title, status: status || 'details' } });
   return json({ ok: true, open });

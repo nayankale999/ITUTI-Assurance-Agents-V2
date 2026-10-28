@@ -1,7 +1,7 @@
 import { db } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOriginJson } from '@/lib/api';
 import { gapActionSchema } from '@/lib/validate';
-import { planFor, owners, notifyOwner } from '@/lib/plan';
+import { planFor, owners, notifyOwner, giveOwnerTasks } from '@/lib/plan';
 import { audit } from '@/lib/audit';
 import type { AssessmentData } from '@/lib/assurance';
 
@@ -43,6 +43,7 @@ export async function POST(req: Request, { params }: Ctx) {
       ownerName: owner ? (owner.name || owner.email) : ownerName!.slice(0, 255), department, due: due || null, createdById: v.id,
     };
   }));
+  if (owner) await giveOwnerTasks({ orgId: a.org.id, systemId: id, ownerId: owner.id, gapRefs: rows.map(r => r.gapRef!).filter(Boolean), due: due || null, by: v.id });
   await audit({ orgId: a.org.id, systemId: id, userId: v.id, action: 'gap.actions', detail: { title: `${rows.length} action${rows.length === 1 ? '' : 's'} for ${department}` } });
   // Only people who can sign in are emailed: the link is useless to an owner outside the platform
   const email = owner?.email || null;
