@@ -117,3 +117,15 @@ test('gaps come from unmet controls and unconfirmed conformity answers, and pair
   assert.equal(p.closable.map(a => a.gapRef).join(), 'ctrl:GOV-1');
   assert.equal(p.overdue, 2);
 });
+
+test('a resolved action on a gap that is still open shows as awaiting the assessment update, not as needing an action', async () => {
+  const { findGaps, planStatus } = await import('../src/lib/gaps');
+  const gaps = findGaps(hr);
+  const act = { id: 'a1', gapRef: 'ctrl:DAT-3', status: 'resolved', ownerId: null, ownerName: 'A', department: 'HR', due: null, title: '', notes: '', severity: 'high', date: '' };
+  const p = planStatus(gaps, [act]);
+  const row = p.rows.find(r => r.gap.ref === 'ctrl:DAT-3')!;
+  assert.equal(row.action?.id, 'a1');
+  assert.equal(row.awaitingUpdate, true);
+  assert.equal(p.awaitingUpdate, 1);
+  assert.equal(p.withoutAction, gaps.length - 1);
+});

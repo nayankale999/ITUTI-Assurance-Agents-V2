@@ -31,7 +31,7 @@ export async function POST(req: Request, { params }: Ctx) {
   if (ownerId && (!owner || !(await db.memberships.first({ orgId: a.org.id, userId: ownerId })))) return err(400, 'The owner must be a member of this organisation, or enter a name instead.');
   const plan = await planFor(id, a.system.data as AssessmentData);
   const gaps = new Map(plan.gaps.map(g => [g.ref, g]));
-  const taken = new Set(plan.rows.filter(r => r.action).map(r => r.gap.ref));
+  const taken = new Set(plan.rows.filter(r => r.action && !r.awaitingUpdate).map(r => r.gap.ref));
   const fresh = items.filter(i => gaps.has(i.gapRef) && !taken.has(i.gapRef));
   if (!fresh.length) return err(400, 'These gaps already have open actions, or have been closed.');
   const today = new Date().toISOString().slice(0, 10);

@@ -5,8 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { INCIDENT_STATUSES, sevTone, statusLabel } from '@/lib/incidents';
 import type { Gap, GapAction } from '@/lib/gaps';
 
-type Row = { gap: Gap; action: GapAction | null };
-type Data = { rows: Row[]; closable: GapAction[]; actions: GapAction[]; withAction: number; withoutAction: number; overdue: number; people: { id: string; name: string; email: string }[]; departments: string[]; canPlan: boolean };
+type Row = { gap: Gap; action: GapAction | null; awaitingUpdate: boolean };
+type Data = { rows: Row[]; closable: GapAction[]; actions: GapAction[]; withAction: number; withoutAction: number; awaitingUpdate: number; overdue: number; people: { id: string; name: string; email: string }[]; departments: string[]; canPlan: boolean };
 
 async function call(url: string, method: string, body?: unknown) {
   const r = await fetch(url, { method, headers: body === undefined ? {} : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -71,6 +71,7 @@ export function ActionPlan({ systemId, settle, goTo, journeyDone }: { systemId: 
             {(['critical', 'high', 'medium', 'low'] as const).map(s => bySev(s) ? <span key={s} className={`pill ${sevTone(s)}`}>{bySev(s)} {SEV_LABEL[s].toLowerCase()}</span> : null)}
             <span className="pill t-good">{d.withAction} with an action</span>
             {d.withoutAction > 0 && <span className="pill t-warn">{d.withoutAction} need an owner</span>}
+            {d.awaitingUpdate > 0 && <span className="pill t-info">{d.awaitingUpdate} resolved, assessment to update</span>}
             {d.overdue > 0 && <span className="pill t-crit">{d.overdue} overdue</span>}
           </div>
         </div>
@@ -115,7 +116,7 @@ export function ActionPlan({ systemId, settle, goTo, journeyDone }: { systemId: 
 
           <div className="scroll"><table className="ledger plan-table">
             <thead><tr>{d.canPlan && <th aria-label="Select" />}<th>Gap</th><th>Priority</th><th>Action</th></tr></thead>
-            <tbody>{rows.map(({ gap: g, action: a }) => (
+            <tbody>{rows.map(({ gap: g, action: a, awaitingUpdate }) => (
               <tr key={g.ref}>
                 {d.canPlan && <td>{!a && <input type="checkbox" aria-label={`Select ${g.title}`} checked={sel.has(g.ref)} onChange={() => toggle(g.ref)} />}</td>}
                 <td>
@@ -130,6 +131,8 @@ export function ActionPlan({ systemId, settle, goTo, journeyDone }: { systemId: 
                   {d.canPlan
                     ? <select aria-label="Action status" value={a.status} style={{ width: 'auto', marginTop: 6 }} onChange={e => update(a.id, { status: e.target.value })}>{INCIDENT_STATUSES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
                     : <span className="pill t-info" style={{ marginTop: 6 }}>{statusLabel(a.status)}</span>}
+                  {awaitingUpdate && <div className="await-note">Action {statusLabel(a.status).toLowerCase()}. The gap stays open until the assessment shows it: {g.kind === 'control' ? `set ${g.ref.slice(5)} to Met and record the evidence` : 'confirm the answer'}.{' '}
+                    <button type="button" className="linkish" onClick={() => goTo(g.kind === 'control' ? 'controls' : 'conformity', g.ref)}>Update the assessment</button></div>}
                 </> : <span className="pill t-warn">Needs an action</span>}</td>
               </tr>
             ))}</tbody>

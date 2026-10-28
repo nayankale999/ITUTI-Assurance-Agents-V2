@@ -44,15 +44,20 @@ export type GapAction = { id: string; gapRef: string | null; status: string; own
 
 /** Pairs each gap with its open action, and lists actions whose gap has since been closed. */
 export function planStatus(gaps: Gap[], actions: GapAction[]) {
-  const open = actions.filter(a => !['resolved', 'closed'].includes(a.status));
-  const byRef = new Map(open.map(a => [a.gapRef, a]));
-  const rows = gaps.map(g => ({ gap: g, action: byRef.get(g.ref) || null }));
+  const done = (a: GapAction) => ['resolved', 'closed'].includes(a.status);
+  const open = actions.filter(a => !done(a));
+  // Each gap shows its open action; failing that, its latest finished one. A finished action on a gap that is
+  // still open means the owner says the work is done but the assessment has not been updated to show it.
+  const byRef = new Map<string | null, GapAction>();
+  for (const a of actions) { const cur = byRef.get(a.gapRef); if (!cur || (done(cur) && !done(a)) || (done(cur) === done(a))) byRef.set(a.gapRef, a); }
+  const rows = gaps.map(g => { const a = byRef.get(g.ref) || null; return { gap: g, action: a, awaitingUpdate: !!a && done(a) }; });
   const refs = new Set(gaps.map(g => g.ref));
   const closable = open.filter(a => a.gapRef && !refs.has(a.gapRef));
   const today = new Date().toISOString().slice(0, 10);
   return {
     rows, closable,
     withAction: rows.filter(r => r.action).length,
+    awaitingUpdate: rows.filter(r => r.awaitingUpdate).length,
     withoutAction: rows.filter(r => !r.action).length,
     overdue: open.filter(a => a.due && a.due < today).length,
   };
