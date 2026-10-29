@@ -61,6 +61,35 @@ A run is a crew of specialist agents, each with its own instructions, tools, fie
 
 A specialist cannot propose outside its fields. Each one's model calls, tokens (input, cache reads and writes, output), estimated cost, tool calls, proposals and time are stored per run in `agent_runs.usage_detail` and shown on the crew cards and, for Ituti admins, on the client's page (*Model use this month, by agent*). Optional settings: `ANTHROPIC_MODEL_<SPECIALIST>` to give one specialist another model (for example `ANTHROPIC_MODEL_READER=claude-sonnet-5-5`), and `ANTHROPIC_PRICES` (JSON, US dollars per million tokens by model id) to change the cost estimates. Web searches by the model researcher are billed separately by Anthropic and are not in the estimate.
 
+## MCP server
+
+The platform is also a remote **MCP server** (Model Context Protocol, Streamable HTTP) at `https://assurance.ituti.tech/api/mcp`
+(on-premises: `APP_URL/api/mcp`), so Claude, IBM watsonx Orchestrate, Copilot Studio, Cursor, VS Code and other MCP
+clients can work with it directly.
+
+- **Tools:** `list_systems`, `get_system`, `register_system`, `add_evidence` (text or a file), `search_evidence`,
+  `read_evidence`, `verify_quote`, `lookup_model`, `start_assessment` (full crew or one specialist; asks before a
+  billable run), `assessment_status` (with each specialist's cost), `list_proposals`, `get_gaps`, `list_incidents`,
+  `report_incident`, `get_ai_spend`. Prompts `assess_ai_system` and `close_the_gaps`; each system's record as the
+  resource `assurance://systems/{id}`. Accepting proposals stays a human step in the web app.
+- **Sign-in:** OAuth 2.1 with PKCE and dynamic client registration. The person signs in, chooses the organisation and
+  approves; their own rights apply (a viewer can read but not change anything) and actions are recorded under their
+  name. Client admins see and disconnect connected applications on the organisation's page. Service integrations
+  can instead send a client API key (`Authorization: Bearer ita_…`).
+- **Cost:** the tools themselves use no AI (the client's model does the reasoning); starting an assessment or
+  researching a new model does, and is metered and budgeted on the Spend page as usual.
+
+Connecting:
+
+| Client | How |
+|---|---|
+| Claude (claude.ai, desktop, mobile) | Settings → Connectors → Add custom connector → `https://assurance.ituti.tech/api/mcp`, then sign in |
+| Claude Code | `claude mcp add --transport http ituti-assurance https://assurance.ituti.tech/api/mcp`, then `/mcp` to sign in |
+| watsonx Orchestrate | `ibm/mcp/ituti-assurance-mcp.yaml` (OAuth connection steps in the file) |
+| Others | Streamable HTTP URL above; OAuth discovery at `/.well-known/oauth-protected-resource/api/mcp` |
+
+Browser-based clients are accepted from this site, claude.ai and localhost; add others with `MCP_ALLOWED_ORIGINS`.
+
 ## On-premises installation
 
 `onprem/` holds a separate package for installing the whole platform on a client's own servers (Docker or Node.js,

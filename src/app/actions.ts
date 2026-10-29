@@ -488,3 +488,44 @@ export async function issueSignInLink(_: ActionState, fd: FormData): Promise<Act
     return { ok: `Give this link to ${email} privately. It works once, within 60 minutes: ${link}` };
   } catch (e) { return fail(e); }
 }
+
+/* ---------- OAuth approval for MCP clients ---------- */
+
+export async function decideOAuth(fd: FormData) {
+  const v = await getViewer();
+  if (!v) redirect('/login');
+  const { checkAuthorize, issueCode } = await import('@/lib/oauth');
+  const q = new URLSearchParams(String(fd.get('query') || ''));
+  const check = await checkAuthorize(q);
+  if ('fatal' in check) throw new Error(check.fatal);
+  if ('redirect' in check) redirect(check.redirect);
+  const a = check.ok;
+  if (fd.get('decision') !== 'allow') {
+    const u = new URL(a.redirectUri);
+    u.searchParams.set('error', 'access_denied');
+    if (a.state) u.searchParams.set('state', a.state);
+    redirect(u.toString());
+  }
+  const orgId = String(fd.get('orgId') || '');
+  const caps = await capsFor(v, orgId);
+  if (!caps.view) throw new Error('You cannot open that organisation.');
+  const url = await issueCode(a, v.id, orgId);
+  await audit({ orgId, userId: v.id, action: 'oauth.approved', detail: { title: `Connected ${a.client.name}` } });
+  redirect(url);
+}
+
+export async function revokeConnectedApp(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    const familyId = String(fd.get('familyId') || '');
+    const g = await db.oauthGrants.first({ familyId });
+    if (!g) return { ok: 'Already disconnected.' };
+    const caps = await capsFor(v, g.orgId);
+    if (g.userId !== v.id && !caps.manage) return { error: 'You cannot disconnect this application.' };
+    const { revokeFamily } = await import('@/lib/oauth');
+    await revokeFamily(familyId);
+    await audit({ orgId: g.orgId, userId: v.id, action: 'oauth.revoked', detail: { title: 'Disconnected an application' } });
+    revalidatePath('/', 'layout');
+    return { ok: 'Disconnected.' };
+  } catch (e) { return fail(e); }
+}

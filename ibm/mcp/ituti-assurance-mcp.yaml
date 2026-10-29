@@ -1,0 +1,25 @@
+# watsonx Orchestrate remote MCP toolkit: Ituti AI Assurance (Streamable HTTP).
+# 1. Register Orchestrate as an OAuth client of Ituti AI Assurance (once per Orchestrate environment):
+#      curl -s -X POST https://assurance.ituti.tech/api/oauth/register -H 'content-type: application/json' \
+#        -d '{"client_name":"watsonx Orchestrate","token_endpoint_auth_method":"client_secret_post",
+#             "redirect_uris":["<your Orchestrate URL>/mfe_connectors/api/v1/agentic/oauth/_callback"]}'
+#    Keep the client_id and client_secret it returns.
+# 2. In Orchestrate, Manage > Connections: add "ituti_assurance", type OAuth2 Authorization Code, with
+#      Authorization URL  https://assurance.ituti.tech/oauth/authorize
+#      Token URL          https://assurance.ituti.tech/api/oauth/token
+#      Scope              mcp
+#    and the client ID and secret from step 1. Use Member credentials so each person signs in as themselves.
+#    (For a service connection instead, use a client API key ita_... sent as "Authorization: Bearer".)
+# 3. Import:  orchestrate toolkits import -f ibm/mcp/ituti-assurance-mcp.yaml -a ituti_assurance
+spec_version: v1
+kind: mcp
+name: ituti_ai_assurance
+description: >
+  Ituti AI Assurance: AI system inventory, EU AI Act classification, evidence, assessments by the specialist crew,
+  proposals for review, gaps and actions, incidents and AI spend, for the signed-in person's organisation.
+transport: streamable_http
+server_url: https://assurance.ituti.tech/api/mcp
+tools:
+  - "*"
+connections:
+  - ituti_assurance

@@ -35,3 +35,13 @@ test('each specialist is given only its own fields', () => {
   assert.ok(text.includes('ctrl.GOV-1') && !text.includes('profile.owner') && !text.includes('conf.P1') && !text.includes('metric.'));
   assert.ok(describeForAgent({}, ['card', 'metric']).includes('Monitoring metrics'));
 });
+
+test('OAuth redirect URIs must be https, localhost http or an app scheme', async () => {
+  const { validRedirect } = await import('../src/lib/oauth');
+  assert.ok(validRedirect('https://claude.ai/api/mcp/auth_callback'));
+  assert.ok(validRedirect('http://localhost:6274/oauth/callback'));
+  assert.ok(validRedirect('com.example.app:/callback'));
+  assert.ok(!validRedirect('http://evil.example/cb'));
+  assert.ok(!validRedirect('https://claude.ai/cb#frag'));
+  assert.ok(!validRedirect('javascript:alert(1)'));
+});

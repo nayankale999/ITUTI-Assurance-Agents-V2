@@ -49,6 +49,7 @@ export default async function SystemPage() {
     ['AI (Claude)', ai ? <><Ok ok>Configured</Ok> agent model <span className="mono">{agentModel()}</span>{process.env.ANTHROPIC_BASE_URL ? <> · through gateway <span className="mono">{process.env.ANTHROPIC_BASE_URL}</span></> : ' · direct to Anthropic'}{proxy ? ' · via outbound proxy' : ''}</> : <Ok ok={false}>Not configured: assessments, agents and reviews are off</Ok>],
     ['Cost estimates', process.env.ANTHROPIC_PRICES ? 'Custom prices (ANTHROPIC_PRICES)' : 'Anthropic list prices'],
     ['AI budget', g ? <>{money(g.spent)} of {money(g.limit)} this month{g.hardStop ? ', hard stop' : ''} · <Link href="/admin/spend">Spend</Link></> : <>No overall budget · <Link href="/admin/spend">Set one</Link></>],
+    ['MCP server', <><span className="mono">{process.env.NEXTAUTH_URL || ''}/api/mcp</span> · OAuth sign-in or client API key</>],
     ['Control plane', tracingOn() ? <><Ok ok>Sending traces to watsonx Orchestrate</Ok> {Object.keys(ids).length} agent IDs set</> : 'None: spend and agent use are tracked on the Spend page'],
     ['Self sign-up', process.env.SELF_REGISTRATION === 'off' ? 'Off (invitation only)' : 'Open at /register'],
     ['Usage', `${orgs} client${orgs === 1 ? '' : 's'}, ${users} active user${users === 1 ? '' : 's'}`],

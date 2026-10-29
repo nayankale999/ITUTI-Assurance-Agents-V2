@@ -125,3 +125,10 @@ IMAGE=
 BASE_IMAGE=node:22-bookworm-slim
 MARIADB_IMAGE=mariadb:11.4
 CADDY_IMAGE=caddy:2.8
+
+# ---------------------------------------------------------------------------------------------------------------
+# 10. MCP server (APP_URL/api/mcp)
+# ---------------------------------------------------------------------------------------------------------------
+# Optional: extra browser origins allowed to call the MCP server, comma-separated (this site, claude.ai and
+# localhost are always allowed). Clients that call from their own servers need nothing here.
+MCP_ALLOWED_ORIGINS=

@@ -320,6 +320,7 @@ function writeSettings() {
     ['HTTPS_PROXY', proxy || undefined], ['NO_PROXY', proxy ? C.NO_PROXY || 'localhost,127.0.0.1' : undefined], ['NODE_USE_ENV_PROXY', proxy ? '1' : undefined],
     ['ORCHESTRATE_INSTANCE_URL', C.ORCHESTRATE_INSTANCE_URL], ['ORCHESTRATE_API_KEY', C.ORCHESTRATE_API_KEY], ['ORCHESTRATE_TENANT_ID', C.ORCHESTRATE_TENANT_ID],
     ['ORCHESTRATE_AGENT_IDS', C.ORCHESTRATE_AGENT_IDS], ['ORCHESTRATE_AUTH', C.ORCHESTRATE_AUTH], ['ORCHESTRATE_ENV', C.ORCHESTRATE_ENV],
+    ['MCP_ALLOWED_ORIGINS', C.MCP_ALLOWED_ORIGINS],
   ];
   fs.mkdirSync(deployDir, { recursive: true });
   writeEnv(path.join(deployDir, 'app.env'), app);

@@ -391,7 +391,7 @@ async function earlierWork(runId: string, notes: { k: SpecialistKey; summary: st
 
 /** Starts a run for a system unless one is already active. A specialist run uses only that writer (with the
  * reader and researcher in support). Returns the run. */
-export async function startRun(opts: { orgId: string; systemId: string; userId: string | null; source?: 'web' | 'a2a'; specialist?: SpecialistKey | null }): Promise<AgentRun> {
+export async function startRun(opts: { orgId: string; systemId: string; userId: string | null; source?: 'web' | 'a2a' | 'mcp'; specialist?: SpecialistKey | null }): Promise<AgentRun> {
   const active = await db.agentRuns.first({ systemId: opts.systemId, status: ['queued', 'running'] }, { orderBy: [['createdAt', 'desc']] });
   if (active && Date.now() - (active.heartbeatAt || active.createdAt).getTime() < STALE_MS) return active;
   if (active) await db.agentRuns.update({ id: active.id }, { status: 'failed', error: 'The run stopped responding.', finishedAt: new Date() });

@@ -48,7 +48,7 @@ export type ModelRow = {
 export type RunLogEntry = { at: string; text: string };
 export type AgentRun = {
   id: string; orgId: string; systemId: string; status: 'queued' | 'running' | 'completed' | 'failed'; startedById: string | null; model: string;
-  log: RunLogEntry[]; summary: string | null; error: string | null; inputTokens: number; outputTokens: number; proposals: number; source: 'web' | 'a2a';
+  log: RunLogEntry[]; summary: string | null; error: string | null; inputTokens: number; outputTokens: number; proposals: number; source: 'web' | 'a2a' | 'mcp';
   createdAt: Date; heartbeatAt: Date | null; finishedAt: Date | null; usage_detail: RunUsage | null; specialist: string | null;
 };
 /** Tokens, estimated cost and time per specialist in one run. */
@@ -57,6 +57,9 @@ export type RunUsage = Record<string, SpecialistUsage>;
 export type PlanSettings = { systemId: string; orgId: string; auto: boolean; ownerId: string | null; ownerName: string | null; department: string | null; dueDays: number; updatedById: string | null; updatedAt: Date; lastAutoAt: Date | null };
 export type SpendRow = { id: string; orgId: string | null; systemId: string | null; runId: string | null; source: string; agent: string; model: string; inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number; costMicros: number; createdAt: Date };
 export type SpendBudget = { scope: string; monthlyCents: number; alertPct: number; hardStop: boolean; alertedMonth: string | null; alertedLevel: number; updatedById: string | null; updatedAt: Date };
+export type OAuthClient = { id: string; name: string; redirectUris: string[]; secretHash: string | null; createdAt: Date; lastUsedAt: Date | null };
+/** An authorisation code, access token or refresh token given to an MCP client for one user and one client organisation. */
+export type OAuthGrant = { id: string; kind: 'code' | 'access' | 'refresh'; tokenHash: string; clientId: string; userId: string; orgId: string; scope: string; redirectUri: string | null; codeChallenge: string | null; resource: string | null; expiresAt: Date; usedAt: Date | null; revokedAt: Date | null; lastUsedAt: Date | null; familyId: string; createdAt: Date };
 export type Proposal = {
   id: string; runId: string; systemId: string; path: string; label: string; value: unknown; previous: unknown; rationale: string;
   sources: Source[]; confidence: 'high' | 'medium' | 'low'; status: 'pending' | 'accepted' | 'rejected' | 'superseded';
@@ -114,6 +117,8 @@ export const DEFS = {
   }),
   aiSpend: def('ai_spend', ['id'], { id: 'str', orgId: 'str?', systemId: 'str?', runId: 'str?', source: 'str', agent: 'str', model: 'str', inputTokens: 'int', outputTokens: 'int', cacheRead: 'int', cacheWrite: 'int', costMicros: 'int', createdAt: 'date' }),
   spendBudgets: def('spend_budgets', ['scope'], { scope: 'str', monthlyCents: 'int', alertPct: 'int', hardStop: 'bool', alertedMonth: 'str?', alertedLevel: 'int', updatedById: 'str?', updatedAt: 'date' }),
+  oauthClients: def('oauth_clients', ['id'], { id: 'str', name: 'str', redirectUris: 'json', secretHash: 'str?', createdAt: 'date', lastUsedAt: 'date?' }),
+  oauthGrants: def('oauth_grants', ['id'], { id: 'str', kind: 'str', tokenHash: 'str', clientId: 'str', userId: 'str', orgId: 'str', scope: 'str', redirectUri: 'str?', codeChallenge: 'str?', resource: 'str?', expiresAt: 'date', usedAt: 'date?', revokedAt: 'date?', lastUsedAt: 'date?', familyId: 'str', createdAt: 'date' }),
   planSettings: def('plan_settings', ['systemId'], { systemId: 'str', orgId: 'str', auto: 'bool', ownerId: 'str?', ownerName: 'str?', department: 'str?', dueDays: 'int', updatedById: 'str?', updatedAt: 'date', lastAutoAt: 'date?' }),
   apiKeys: def('api_keys', ['id'], { id: 'str', orgId: 'str', name: 'str', prefix: 'str', keyHash: 'str', createdById: 'str?', createdAt: 'date', lastUsedAt: 'date?', revokedAt: 'date?' }),
   usage: def('usage_events', ['id'], { id: 'str', orgId: 'str', kind: 'str', systemId: 'str?', runId: 'str?', source: 'str', billable: 'bool', plan: 'str', createdAt: 'date', reportedAt: 'date?' }),
@@ -152,6 +157,8 @@ function makeDb(exec: () => import('mysql2/promise').Pool | PoolConnection, inTx
     agentRuns: t<AgentRun>(DEFS.agentRuns, () => ({ ...withId(), status: 'queued', startedById: null, log: [], summary: null, error: null, inputTokens: 0, outputTokens: 0, proposals: 0, source: 'web', heartbeatAt: null, finishedAt: null, usage_detail: null, specialist: null })),
     aiSpend: t<SpendRow>(DEFS.aiSpend, () => ({ ...withId(), orgId: null, systemId: null, runId: null, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, costMicros: 0 })),
     spendBudgets: t<SpendBudget>(DEFS.spendBudgets, () => ({ alertPct: 80, hardStop: false, alertedMonth: null, alertedLevel: 0, updatedById: null, updatedAt: now() })),
+    oauthClients: t<OAuthClient>(DEFS.oauthClients, () => ({ createdAt: now(), secretHash: null, lastUsedAt: null })),
+    oauthGrants: t<OAuthGrant>(DEFS.oauthGrants, () => ({ ...withId(), redirectUri: null, codeChallenge: null, resource: null, usedAt: null, revokedAt: null, lastUsedAt: null })),
     planSettings: t<PlanSettings>(DEFS.planSettings, () => ({ auto: false, ownerId: null, ownerName: null, department: null, dueDays: 30, updatedById: null, updatedAt: now(), lastAutoAt: null })),
     apiKeys: t<ApiKey>(DEFS.apiKeys, () => ({ ...withId(), createdById: null, lastUsedAt: null, revokedAt: null })),
     usage: t<UsageEvent>(DEFS.usage, () => ({ ...withId(), systemId: null, runId: null, reportedAt: null })),
@@ -220,6 +227,7 @@ export async function deleteOrg(orgId: string) {
     await t.a2aTasks.remove({ orgId });
     await t.a2aContexts.remove({ orgId });
     await t.spendBudgets.remove({ scope: orgId });
+    await t.oauthGrants.remove({ orgId });
     await t.registrations.update({ orgId }, { orgId: null });
     const teamIds = (await t.teams.find({ orgId })).map(x => x.id);
     if (teamIds.length) { await t.teamMembers.remove({ teamId: teamIds }); await t.teamSystems.remove({ teamId: teamIds }); }
@@ -253,6 +261,7 @@ export async function deleteUser(userId: string) {
     await t.planSettings.update({ ownerId: userId }, { ownerId: null, auto: false });
     await t.planSettings.update({ updatedById: userId }, { updatedById: null });
     await t.spendBudgets.update({ updatedById: userId }, { updatedById: null });
+    await t.oauthGrants.remove({ userId });
     await t.shares.update({ createdById: userId }, { createdById: null });
     await t.users.remove({ id: userId });
   });

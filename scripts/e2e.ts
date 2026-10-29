@@ -313,6 +313,126 @@ async function main() {
       check('specialist conversations are traced under their own agent ID', traceText().includes('wxo-reader') && traceText().includes('wxo-checker'));
     }
 
+    // ---------- MCP server ----------
+    {
+      const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+      const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+      const connect = async (key: string) => {
+        const client = new Client({ name: 'e2e', version: '1.0.0' });
+        await client.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/api/mcp`), { requestInit: { headers: { authorization: `Bearer ${key}` } } }));
+        return client;
+      };
+      const call = async (client: any, name: string, args: Record<string, unknown> = {}) => {
+        const r = await client.callTool({ name, arguments: args });
+        const t = (r.content as any[]).map(x => x.text).join('');
+        let j: any = null; try { j = JSON.parse(t); } catch { /* plain text */ }
+        return { error: !!r.isError, text: t, json: j };
+      };
+      const raw = (body: unknown, headers: Record<string, string> = {}) => fetch(`${BASE}/api/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers }, body: JSON.stringify(body) });
+      check('the MCP server refuses calls without an API key', (await raw({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).status === 401);
+      check('the MCP server refuses calls from another site', (await raw({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { authorization: `Bearer ${keyA}`, origin: 'https://evil.example' })).status === 403);
+      const mcp = await connect(keyA);
+      const tools = (await mcp.listTools()).tools.map((t: any) => t.name);
+      check('the MCP server lists the assurance tools', ['list_systems', 'get_system', 'register_system', 'add_evidence', 'search_evidence', 'read_evidence', 'verify_quote', 'lookup_model', 'start_assessment', 'assessment_status', 'list_proposals', 'get_gaps', 'list_incidents', 'report_incident', 'get_ai_spend'].every(n => tools.includes(n)), tools.join(','));
+      check('the MCP server offers prompts', (await mcp.listPrompts()).prompts.some((p: any) => p.name === 'assess_ai_system'));
+      const ls = await call(mcp, 'list_systems');
+      check('MCP lists only this client\'s systems', /fraud model/i.test(ls.text) && !ls.text.includes('Secret claims model'), ls.text.slice(0, 300));
+      const gs = await call(mcp, 'get_system', { system: 'Fraud model' });
+      check('MCP returns a system with its classification and journey', !gs.error && !!gs.json?.eu_ai_act?.tier && gs.json.journey?.length === 5);
+      check('MCP refuses another client\'s system', (await call(mcp, 'get_system', { system: 'Secret claims model' })).error);
+      const se = await call(mcp, 'search_evidence', { system: 'Fraud model', query: 'independent validation' });
+      check('MCP searches the evidence', Array.isArray(se.json) && se.json[0]?.document === 'fraud-validation.md');
+      check('MCP verifies a real quote', (await call(mcp, 'verify_quote', { system: 'Fraud model', quote: 'Independent validation of the model was completed by the second-line Model Risk team' })).json?.found === true);
+      check('MCP rejects an invented quote', (await call(mcp, 'verify_quote', { system: 'Fraud model', quote: 'The board approved the AI policy on 1 January 2019' })).json?.found === false);
+      const reg = await call(mcp, 'register_system', { name: 'MCP chatbot', description: 'Customer service chatbot built on Example AI Example Model 1, used in the UK.', team: 'Digital' });
+      check('MCP registers a system', reg.json?.created === true && !!(await db.aiSystems.first({ orgId: orgA.id, name: 'MCP chatbot' })));
+      const ev = await call(mcp, 'add_evidence', { system: 'MCP chatbot', title: 'Validation note', text: report.replace('Credit scoring', 'Chatbot') });
+      const evf = await call(mcp, 'add_evidence', { system: 'MCP chatbot', title: 'policy.md', file_base64: Buffer.from('# AI policy\n\nThe chatbot is reviewed every quarter by the Digital risk committee, chaired by the COO.\n').toString('base64') });
+      check('MCP saves pasted and attached evidence', ev.json?.saved === true && evf.json?.saved === true && (await db.documents.count({ systemId: reg.json?.system_id })) === 2);
+      const st = await call(mcp, 'start_assessment', { system: 'MCP chatbot', specialist: 'controls' });
+      check('MCP starts one specialist', st.json?.started === true && st.json?.by === 'Controls assessor', st.text.slice(0, 200));
+      let mrun = null;
+      for (let i = 0; i < 60; i++) { mrun = await db.agentRuns.first({ systemId: reg.json?.system_id }); if (mrun && !['queued', 'running'].includes(mrun.status)) break; await new Promise(r => setTimeout(r, 500)); }
+      check('the MCP-started run completes and is marked as MCP', mrun?.status === 'completed' && mrun.source === 'mcp' && mrun.specialist === 'controls');
+      const as = await call(mcp, 'assessment_status', { system: 'MCP chatbot' });
+      check('MCP reports the run with each specialist\'s cost', as.json?.latest_run?.status === 'completed' && as.json.latest_run.crew.some((c: any) => c.agent === 'Controls assessor' && c.estimated_cost_usd > 0));
+      const lp = await call(mcp, 'list_proposals', { system: 'MCP chatbot' });
+      check('MCP lists proposals with their sources, for review in the app', lp.json?.total >= 1 && lp.json.proposals[0].sources.length >= 1 && String(lp.json.review_link).includes('/systems/'));
+      const gp = await call(mcp, 'get_gaps', { system: 'MCP chatbot' });
+      check('MCP shows the gaps to close', gp.json?.gaps > 0 && !!gp.json.rows[0].priority);
+      const inc = await call(mcp, 'report_incident', { system: 'MCP chatbot', title: 'Chatbot gave wrong fee information', severity: 'medium', category: 'Accuracy' });
+      check('MCP records an incident', inc.json?.recorded === true && inc.json.open_incidents === 1 && (await call(mcp, 'list_incidents', { system: 'MCP chatbot' })).text.includes('wrong fee information'));
+      const sp = await call(mcp, 'get_ai_spend');
+      check('MCP reports the client\'s AI spend by agent', sp.json?.estimated_cost_usd > 0 && sp.json.by_agent.some((a: any) => a.agent === 'Controls assessor'));
+      const res = await mcp.readResource({ uri: `assurance://systems/${reg.json?.system_id}` });
+      check('MCP exposes the assessment record as a resource', String((res.contents[0] as any).text).includes('"assessment"'));
+      check('MCP actions are in the audit trail', !!(await db.auditLog.find({ orgId: orgA.id, action: 'incident.created' })).find(x => (x.detail as any)?.via === 'mcp'));
+      await mcp.close();
+    }
+
+    // ---------- MCP with OAuth sign-in ----------
+    {
+      const { createHash: ch, randomBytes: rb } = await import('crypto');
+      const prm = await (await get('/.well-known/oauth-protected-resource/api/mcp')).json();
+      check('the MCP server publishes its protected-resource metadata', prm.resource === `${BASE}/api/mcp` && prm.authorization_servers?.[0] === BASE);
+      const asm = await (await get('/.well-known/oauth-authorization-server')).json();
+      check('the OAuth server publishes its metadata with PKCE and registration', asm.code_challenge_methods_supported?.includes('S256') && asm.registration_endpoint === `${BASE}/api/oauth/register`);
+      const unauth = await fetch(`${BASE}/api/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' });
+      check('an unauthenticated MCP call points the client at the OAuth metadata', unauth.status === 401 && (unauth.headers.get('www-authenticate') || '').includes('resource_metadata='));
+      check('client registration refuses http redirects to other hosts', (await fetch(`${BASE}/api/oauth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: 'Bad', redirect_uris: ['http://evil.example/cb'] }) })).status === 400);
+      const regRes = await fetch(`${BASE}/api/oauth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: 'Claude', redirect_uris: ['https://claude.ai/api/mcp/auth_callback'] }) });
+      const client = await regRes.json();
+      check('an MCP client registers itself', regRes.status === 201 && String(client.client_id).startsWith('mcp_') && !client.client_secret);
+      const verifier = rb(32).toString('base64url');
+      const challenge = ch('sha256').update(verifier).digest('base64url');
+      const qs = new URLSearchParams({ response_type: 'code', client_id: client.client_id, redirect_uri: 'https://claude.ai/api/mcp/auth_callback', code_challenge: challenge, code_challenge_method: 'S256', state: 'st-1', scope: 'mcp', resource: `${BASE}/api/mcp` });
+      const loginRedirect = await fetch(`${BASE}/oauth/authorize?${qs}`, { redirect: 'manual' });
+      check('the approval screen asks people to sign in first', [303, 307, 308].includes(loginRedirect.status) && (loginRedirect.headers.get('location') || '').includes('/login?callbackUrl='));
+      const page = (await (await get(`/oauth/authorize?${qs}`, c.clientAdmin)).text()).replace(/<!-- -->/g, '');
+      check('the approval screen names the application and the organisation', page.includes('Connect Claude') && page.includes(orgA.name) && page.includes('cannot accept proposals'));
+      const noPkce = new URLSearchParams(qs); noPkce.delete('code_challenge');
+      const bad = await fetch(`${BASE}/oauth/authorize?${noPkce}`, { redirect: 'manual', headers: { cookie: c.clientAdmin } });
+      check('authorisation without PKCE is sent back with an error', (bad.headers.get('location') || '').includes('error=invalid_request'));
+      // Approving runs the same code as the Allow button
+      const { checkAuthorize, issueCode, revokeFamily } = await import('../src/lib/oauth');
+      const approve = async (userId: string) => { const r = await checkAuthorize(qs); if (!('ok' in r)) throw new Error('authorize'); return new URL(await issueCode(r.ok, userId, orgA.id)); };
+      const cb = await approve(clientAdmin.id);
+      check('approval returns a code and the state to the application', cb.origin === 'https://claude.ai' && cb.searchParams.get('state') === 'st-1' && !!cb.searchParams.get('code'));
+      const tokenCall = (body: Record<string, string>) => fetch(`${BASE}/api/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body).toString() });
+      check('a wrong PKCE verifier is refused', (await (await tokenCall({ grant_type: 'authorization_code', code: cb.searchParams.get('code')!, client_id: client.client_id, code_verifier: 'x'.repeat(43), redirect_uri: 'https://claude.ai/api/mcp/auth_callback' })).json()).error === 'invalid_grant');
+      const first = await (await tokenCall({ grant_type: 'authorization_code', code: cb.searchParams.get('code')!, client_id: client.client_id, code_verifier: verifier, redirect_uri: 'https://claude.ai/api/mcp/auth_callback' })).json();
+      check('the code is exchanged for access and refresh tokens', first.token_type === 'Bearer' && String(first.access_token).startsWith('ita_oa_') && !!first.refresh_token && first.expires_in === 3600);
+      check('a code works only once', (await (await tokenCall({ grant_type: 'authorization_code', code: cb.searchParams.get('code')!, client_id: client.client_id, code_verifier: verifier })).json()).error === 'invalid_grant');
+      const cb2 = await approve(clientAdmin.id);
+      const tok = await (await tokenCall({ grant_type: 'authorization_code', code: cb2.searchParams.get('code')!, client_id: client.client_id, code_verifier: verifier, redirect_uri: 'https://claude.ai/api/mcp/auth_callback' })).json();
+      const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+      const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+      const asUser = async (access: string) => { const cl = new Client({ name: 'e2e-oauth', version: '1' }); await cl.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/api/mcp`), { requestInit: { headers: { authorization: `Bearer ${access}` } } })); return cl; };
+      const callT = async (cl: any, name: string, args: Record<string, unknown>) => { const r = await cl.callTool({ name, arguments: args }); return { error: !!r.isError, text: (r.content as any[]).map(x => x.text).join('') }; };
+      const ca = await asUser(tok.access_token);
+      check('a signed-in client admin uses the MCP tools', /loan scoring/i.test((await callT(ca, 'list_systems', {})).text));
+      const reg2 = await callT(ca, 'register_system', { name: 'OAuth system' });
+      check('their actions are recorded under their name', !reg2.error && (await db.aiSystems.first({ orgId: orgA.id, name: 'OAuth system' }))?.createdById === clientAdmin.id);
+      await ca.close();
+      const vcb = await approve(viewer.id);
+      const vt = await (await tokenCall({ grant_type: 'authorization_code', code: vcb.searchParams.get('code')!, client_id: client.client_id, code_verifier: verifier })).json();
+      const vc = await asUser(vt.access_token);
+      check('a viewer can read through MCP', !(await callT(vc, 'get_system', { system: 'OAuth system' })).error);
+      check('a viewer cannot register systems or add evidence through MCP', (await callT(vc, 'register_system', { name: 'Nope' })).error && (await callT(vc, 'add_evidence', { system: 'OAuth system', title: 'x', text: 'y'.repeat(60) })).error);
+      await vc.close();
+      const ref = await (await tokenCall({ grant_type: 'refresh_token', refresh_token: tok.refresh_token, client_id: client.client_id })).json();
+      check('a refresh token gives new tokens', String(ref.access_token).startsWith('ita_oa_') && ref.refresh_token !== tok.refresh_token);
+      const reuse = await (await tokenCall({ grant_type: 'refresh_token', refresh_token: tok.refresh_token, client_id: client.client_id })).json();
+      const afterReuse = await fetch(`${BASE}/api/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${ref.access_token}` }, body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' });
+      check('reusing a refresh token revokes the whole connection', reuse.error === 'invalid_grant' && afterReuse.status === 401);
+      const orgPage = await (await get(`/o/${orgA.slug}`, c.clientAdmin)).text();
+      check('client admins see connected applications and the MCP address', orgPage.includes('Connected AI applications') && orgPage.includes('/api/mcp') && orgPage.includes('viewer@bank.test'));
+      const fam = (await db.oauthGrants.first({ userId: viewer.id, kind: 'access' }))!.familyId;
+      await revokeFamily(fam);
+      const afterRevoke = await fetch(`${BASE}/api/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${vt.access_token}` }, body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' });
+      check('disconnecting an application stops its access', afterRevoke.status === 401);
+    }
+
     // ---------- AI spend, budgets and on-prem support ----------
     {
       const spend = await db.aiSpend.find({});

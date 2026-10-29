@@ -8,7 +8,7 @@ import { pool, query, ready } from '@/data/sql';
 import { tokensOf, costOf } from './agent/pricing';
 import { sendActionEmail } from './mail';
 
-export type SpendSource = 'run' | 'a2a' | 'review' | 'research' | 'other';
+export type SpendSource = 'run' | 'a2a' | 'mcp' | 'review' | 'research' | 'other';
 export type SpendCtx = { orgId: string | null; systemId: string | null; runId: string | null; source: SpendSource; agent: string };
 
 const als = new AsyncLocalStorage<SpendCtx>();
@@ -19,7 +19,7 @@ export function withSpend<T>(ctx: Partial<SpendCtx>, fn: () => Promise<T>): Prom
   return als.run({ ...(als.getStore() || BLANK), ...ctx }, fn);
 }
 
-export const SOURCE_LABEL: Record<string, string> = { run: 'Assessment runs', a2a: 'Agent endpoint (A2A)', review: 'Evidence review', research: 'Model research', other: 'Other' };
+export const SOURCE_LABEL: Record<string, string> = { run: 'Assessment runs', a2a: 'Agent endpoint (A2A)', mcp: 'MCP server', review: 'Evidence review', research: 'Model research', other: 'Other' };
 export const AGENT_LABEL: Record<string, string> = {
   reader: 'Evidence reader', research: 'Model researcher', classify: 'Risk classifier', controls: 'Controls assessor', docs: 'Documentation writer',
   conformity: 'Conformity writer', checker: 'Source checker', coordinator: 'Assessment coordinator', assistant: 'Main A2A agent', review: 'Evidence review', unknown: 'Other',

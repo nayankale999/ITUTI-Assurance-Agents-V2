@@ -109,6 +109,13 @@ export const MIGRATIONS: [string, string[]][] = [
     `CREATE TABLE IF NOT EXISTS spend_budgets (scope VARCHAR(36) NOT NULL PRIMARY KEY, monthlyCents BIGINT NOT NULL, alertPct INT NOT NULL DEFAULT 80,
       hardStop TINYINT(1) NOT NULL DEFAULT 0, alertedMonth VARCHAR(7) NULL, alertedLevel INT NOT NULL DEFAULT 0, updatedById ${REF}, updatedAt ${AT}) ${T}`,
   ]],
+  ['010_oauth', [
+    `CREATE TABLE IF NOT EXISTS oauth_clients (id VARCHAR(64) NOT NULL PRIMARY KEY, name VARCHAR(200) NOT NULL, redirectUris JSON NOT NULL, secretHash CHAR(64) NULL,
+      createdAt ${AT}, lastUsedAt ${AT_NULL}) ${T}`,
+    `CREATE TABLE IF NOT EXISTS oauth_grants (id ${ID} PRIMARY KEY, kind VARCHAR(10) NOT NULL, tokenHash CHAR(64) NOT NULL, clientId VARCHAR(64) NOT NULL, userId ${ID}, orgId ${ID},
+      scope VARCHAR(200) NOT NULL, redirectUri TEXT NULL, codeChallenge VARCHAR(128) NULL, resource VARCHAR(500) NULL, expiresAt ${AT}, usedAt ${AT_NULL}, revokedAt ${AT_NULL},
+      lastUsedAt ${AT_NULL}, familyId ${ID}, createdAt ${AT}, UNIQUE KEY uq_grant_token (tokenHash), KEY ix_grant_user (userId), KEY ix_grant_org (orgId), KEY ix_grant_family (familyId)) ${T}`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */

@@ -90,6 +90,10 @@ The platform's agents run inside the application and are published over A2A 0.3.
 risk classifier, controls assessor, documentation writer, conformity writer and source checker. Register them in any
 A2A control plane with a client API key created on the client's page.
 
+The platform is also an MCP server at `APP_URL/api/mcp`, so Claude, watsonx Orchestrate and other MCP clients can
+connect to your installation directly: people sign in with OAuth and approve the connection, and their own rights
+apply. If MCP clients reach the server from browsers on other sites, list those origins in `MCP_ALLOWED_ORIGINS`.
+
 ## Security notes
 
 - The application runs unprivileged (container user 10001, or the `ituti` service account), and can write only to

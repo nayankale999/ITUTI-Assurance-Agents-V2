@@ -3,7 +3,8 @@ import { db } from '@/data';
 import { orgForPage } from '@/lib/session';
 import { ROLE_LABEL } from '@/lib/permissions';
 import { ActionForm, Submit } from '@/components/ActionForm';
-import { createSystem, renameOrg, setOrgAi, setOrgPlan, createOrgApiKey, revokeOrgApiKey } from '@/app/actions';
+import { createSystem, renameOrg, setOrgAi, setOrgPlan, createOrgApiKey, revokeOrgApiKey, revokeConnectedApp } from '@/app/actions';
+import { connectedApps } from '@/lib/oauth';
 import { PLAN_LABEL, monthUsage, FREE_RERUN_DAYS } from '@/lib/usage';
 import { inventory } from '@/lib/portfolio';
 import { InventoryTable } from '@/components/InventoryTable';
@@ -65,6 +66,7 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
       </> : (
         <section className="panel"><div className="empty"><h3>No AI systems recorded yet</h3><p>{caps.createSystems ? 'Add the first system above. A short guided profile puts it in the inventory with its risk tier.' : 'Your organisation’s admin or Ituti assessor will add systems here.'}</p></div></section>
       )}
+      {caps.manage && <ConnectedApps orgId={org.id} />}
       {caps.staff && (
         <section className="panel"><header><h3>Client settings</h3></header><div className="body">
           <ActionForm action={renameOrg} className="formrow">
@@ -112,7 +114,7 @@ async function AgentAccess({ orgId, plan, aiEnabled }: { orgId: string; plan: st
         <Submit>Save plan</Submit>
       </ActionForm>
       <p className="muted">This month: <b>{use.total}</b> assessment{use.total === 1 ? '' : 's'} ({use.billable} billable, {use.viaAgent} through the agent endpoint). An assessment is counted when a pre-fill run completes; re-runs on the same system within {FREE_RERUN_DAYS} days are included.</p>
-      <p className="muted">Agent card: <span className="mono">{base}/.well-known/agent-card.json</span> · endpoint: <span className="mono">{base}/api/a2a</span>{!aiEnabled && <> · <b>switch AI assistance on above, or the agent will refuse to run assessments</b></>}</p>
+      <p className="muted">MCP server: <span className="mono">{base}/api/mcp</span> (OAuth sign-in, or this client&rsquo;s API key as a bearer token) · A2A agent card: <span className="mono">{base}/.well-known/agent-card.json</span> · endpoint: <span className="mono">{base}/api/a2a</span>{!aiEnabled && <> · <b>switch AI assistance on above, or the agent will refuse to run assessments</b></>}</p>
       <details className="crew-agents">
         <summary>Register the assessment crew as separate agents ({SPECIALISTS.length + 1} addresses)</summary>
         <p className="muted">In watsonx Orchestrate, add each as an external A2A agent (protocol 0.3.0) with this client&rsquo;s API key as the bearer token. Each specialist then has its own Agent ID, runs, latency and token use. {tracingOn() ? 'Traces are being sent to Orchestrate.' : 'To send traces, set the ORCHESTRATE_* settings on the server (see the README).'}</p>
@@ -151,6 +153,21 @@ async function AgentAccess({ orgId, plan, aiEnabled }: { orgId: string; plan: st
     </div>
   );
 }
+/** MCP clients (Claude, watsonx Orchestrate and others) people have connected to this organisation with OAuth. */
+async function ConnectedApps({ orgId }: { orgId: string }) {
+  const apps = await connectedApps({ orgId });
+  const base = (process.env.NEXTAUTH_URL || '').replace(/\/$/, '');
+  return (
+    <section className="panel"><header><div><h3>Connected AI applications</h3><small className="muted">Add Ituti AI Assurance to Claude, IBM watsonx Orchestrate or any MCP client with the address <span className="mono">{base}/api/mcp</span>. Each person signs in and approves the connection; their own rights apply.</small></div></header>
+      {apps.length ? <div className="scroll"><table className="ledger"><thead><tr><th>Application</th><th>Connected by</th><th>Since</th><th>Last used</th><th /></tr></thead>
+        <tbody>{apps.map(a => (
+          <tr key={a.familyId}><td>{a.app}</td><td>{a.user}</td><td className="muted">{day(a.since)}</td><td className="muted">{day(a.lastUsed)}</td>
+            <td className="num"><ActionForm action={revokeConnectedApp} confirm="The application loses access until someone connects it again."><input type="hidden" name="familyId" value={a.familyId} /><Submit className="linkbtn">Disconnect</Submit></ActionForm></td></tr>
+        ))}</tbody></table></div> : <div className="body"><p className="muted" style={{ margin: 0 }}>No applications connected yet.</p></div>}
+    </section>
+  );
+}
+
 function DeleteOrg({ orgId, name }: { orgId: string; name: string }) {
   return (
     <details>
