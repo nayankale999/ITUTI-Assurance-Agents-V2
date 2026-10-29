@@ -4,6 +4,10 @@ A multi-client web app for assessing AI systems against the **EU AI Act**, **UK 
 
 For each AI system the app records a profile, classifies it under the EU AI Act, lists the obligations that apply in the EU and UK, and assesses it against up to 39 controls mapped to all four frameworks. It also keeps a model card, performance and fairness metrics, and an incident log. Printable assurance reports and model cards can be saved as PDF from the browser.
 
+## Documentation
+
+The [Design Document](docs/design-document.md), [User Guide](docs/user-guide.md) and [Admin Guide](docs/admin-guide.md) are in [`docs/`](docs).
+
 ## Who can do what
 
 | Role | Scope | Can |
