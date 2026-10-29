@@ -101,6 +101,14 @@ export const MIGRATIONS: [string, string[]][] = [
     `ALTER TABLE agent_runs ADD COLUMN usage_detail JSON NULL`,
     `ALTER TABLE agent_runs ADD COLUMN specialist VARCHAR(32) NULL`,
   ]],
+  ['009_spend', [
+    `CREATE TABLE IF NOT EXISTS ai_spend (id ${ID} PRIMARY KEY, orgId VARCHAR(36) NULL, systemId VARCHAR(36) NULL, runId VARCHAR(36) NULL,
+      source VARCHAR(16) NOT NULL, agent VARCHAR(32) NOT NULL, model VARCHAR(80) NOT NULL, inputTokens INT NOT NULL DEFAULT 0, outputTokens INT NOT NULL DEFAULT 0,
+      cacheRead INT NOT NULL DEFAULT 0, cacheWrite INT NOT NULL DEFAULT 0, costMicros BIGINT NOT NULL DEFAULT 0, createdAt ${AT},
+      KEY ix_spend_at (createdAt), KEY ix_spend_org (orgId, createdAt)) ${T}`,
+    `CREATE TABLE IF NOT EXISTS spend_budgets (scope VARCHAR(36) NOT NULL PRIMARY KEY, monthlyCents BIGINT NOT NULL, alertPct INT NOT NULL DEFAULT 80,
+      hardStop TINYINT(1) NOT NULL DEFAULT 0, alertedMonth VARCHAR(7) NULL, alertedLevel INT NOT NULL DEFAULT 0, updatedById ${REF}, updatedAt ${AT}) ${T}`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */

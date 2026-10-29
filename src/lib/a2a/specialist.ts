@@ -18,6 +18,7 @@ import { searchDocuments, readDocument } from '../documents';
 import { wouldBill, FREE_RERUN_DAYS } from '../usage';
 import { audit } from '../audit';
 import { RunTrace } from '../telemetry';
+import { withSpend, spendBlocked } from '../spend';
 import { agentCard, appUrl } from './card';
 import { DbTaskStore, orgOf } from './store';
 import { resolve, sysLink, latestRun, textOf, status } from './assistant';
@@ -149,7 +150,11 @@ export class SpecialistExecutor implements AgentExecutor {
     bus.finished();
   }
 
-  async execute(rc: RequestContext, bus: ExecutionEventBus) {
+  execute(rc: RequestContext, bus: ExecutionEventBus) {
+    return withSpend({ orgId: orgOf(rc.context)?.id || null, source: 'a2a', agent: this.sp.key }, () => this.handle(rc, bus));
+  }
+
+  private async handle(rc: RequestContext, bus: ExecutionEventBus) {
     const { taskId, contextId, userMessage } = rc;
     const org = orgOf(rc.context);
     const sp = this.sp;
@@ -158,6 +163,8 @@ export class SpecialistExecutor implements AgentExecutor {
     if (!org) return finish('failed', 'Not authorised.');
     const blocked = aiBlocked(org);
     if (blocked) return finish('completed', `${blocked} Until then, your systems can be managed at ${appUrl()}/o/${org.slug}.`);
+    const over = await spendBlocked(org.id);
+    if (over) return finish('completed', over);
     bus.publish(status(taskId, contextId, 'working', false));
 
     const key = `${sp.slug}:${contextId}`.slice(0, 64);

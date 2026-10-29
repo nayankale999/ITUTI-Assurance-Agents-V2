@@ -16,6 +16,7 @@ import { classify, readiness, applicable, TIERS, type AssessmentData } from '../
 import { audit } from '../audit';
 import { wouldBill, FREE_RERUN_DAYS } from '../usage';
 import { appUrl } from './card';
+import { withSpend, spendBlocked } from '../spend';
 import { orgOf } from './store';
 
 const MAX_TURNS = 8;
@@ -206,7 +207,11 @@ export class AssuranceExecutor implements AgentExecutor {
     bus.finished();
   }
 
-  async execute(rc: RequestContext, bus: ExecutionEventBus) {
+  execute(rc: RequestContext, bus: ExecutionEventBus) {
+    return withSpend({ orgId: orgOf(rc.context)?.id || null, source: 'a2a', agent: 'assistant' }, () => this.handle(rc, bus));
+  }
+
+  private async handle(rc: RequestContext, bus: ExecutionEventBus) {
     const { taskId, contextId, userMessage } = rc;
     const org = orgOf(rc.context);
     if (!rc.task) {
@@ -217,6 +222,8 @@ export class AssuranceExecutor implements AgentExecutor {
     if (!org) return finish('failed', 'Not authorised.');
     const blocked = aiBlocked(org);
     if (blocked) return finish('completed', `${blocked} Until then, your systems can be managed at ${appUrl()}/o/${org.slug}.`);
+    const over = await spendBlocked(org.id);
+    if (over) return finish('completed', over);
     bus.publish(status(taskId, contextId, 'working', false));
 
     const ctxRow = await db.a2aContexts.first({ id: contextId.slice(0, 64), orgId: org.id });

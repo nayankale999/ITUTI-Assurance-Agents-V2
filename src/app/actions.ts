@@ -11,6 +11,7 @@ import { sendActionEmail } from '@/lib/mail';
 import { audit } from '@/lib/audit';
 import { blankAssessment, summarise } from '@/lib/summary';
 import { createApiKey } from '@/lib/apikeys';
+import { makeSignInLink } from '@/lib/signin-link';
 
 export type ActionState = { ok?: string; error?: string } | null;
 
@@ -440,5 +441,50 @@ export async function deleteTeam(_: ActionState, fd: FormData): Promise<ActionSt
     await audit({ orgId: team.orgId, userId: v.id, action: 'team.deleted', detail: { title: team.name } });
     revalidatePath('/', 'layout');
     return { ok: 'Team deleted.' };
+  } catch (e) { return fail(e); }
+}
+
+/* ---------- AI spend budgets ---------- */
+
+export async function saveBudget(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    if (v.role !== 'ITUTI_ADMIN') return { error: 'Only Ituti admins can set budgets.' };
+    const scope = String(fd.get('scope') || 'global');
+    if (scope !== 'global' && !(await db.organizations.first({ id: scope }))) return { error: 'Choose a client.' };
+    const usd = Number(String(fd.get('monthly') || '').replace(/[,$£\s]/g, ''));
+    if (!Number.isFinite(usd) || usd <= 0 || usd > 10_000_000) return { error: 'Enter a monthly budget in US dollars.' };
+    const alertPct = Math.min(100, Math.max(10, Math.round(Number(fd.get('alertPct')) || 80)));
+    const row = { monthlyCents: Math.round(usd * 100), alertPct, hardStop: fd.get('hardStop') === 'on', updatedById: v.id, updatedAt: new Date(), alertedMonth: null, alertedLevel: 0 };
+    if (await db.spendBudgets.first({ scope })) await db.spendBudgets.update({ scope }, row);
+    else await db.spendBudgets.insert({ scope, ...row });
+    await audit({ orgId: scope === 'global' ? null : scope, userId: v.id, action: 'spend.budget', detail: { title: `Monthly AI budget $${usd.toFixed(2)}${row.hardStop ? ', hard stop' : ''}` } });
+    revalidatePath('/admin/spend');
+    return { ok: 'Budget saved.' };
+  } catch (e) { return fail(e); }
+}
+
+export async function removeBudget(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    if (v.role !== 'ITUTI_ADMIN') return { error: 'Only Ituti admins can remove budgets.' };
+    await db.spendBudgets.remove({ scope: String(fd.get('scope') || '') });
+    revalidatePath('/admin/spend');
+    return { ok: 'Budget removed.' };
+  } catch (e) { return fail(e); }
+}
+
+/** Makes a one-time sign-in link for a user, for installations without a mail server. Shown once to the admin. */
+export async function issueSignInLink(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    if (v.role !== 'ITUTI_ADMIN') return { error: 'Only Ituti admins can issue sign-in links.' };
+    const email = z.string().trim().toLowerCase().email().parse(fd.get('email'));
+    const user = await db.users.first({ email });
+    if (!user) return { error: 'No user has that address. Invite them first.' };
+    if (user.disabled) return { error: 'That account is disabled.' };
+    const link = await makeSignInLink(email, 60);
+    await audit({ userId: v.id, action: 'user.signin_link', detail: { title: `One-time sign-in link for ${email}` } });
+    return { ok: `Give this link to ${email} privately. It works once, within 60 minutes: ${link}` };
   } catch (e) { return fail(e); }
 }

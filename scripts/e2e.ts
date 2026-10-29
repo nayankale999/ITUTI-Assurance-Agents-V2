@@ -312,6 +312,45 @@ async function main() {
       check('a writer reports its own results and cost', res.reply.includes('"status":"completed"') && res.reply.includes('estimated_cost_usd') && res.reply.includes('ctrl.TEC-2') && !res.reply.includes('card.limitations'), res.reply.slice(0, 300));
       check('specialist conversations are traced under their own agent ID', traceText().includes('wxo-reader') && traceText().includes('wxo-checker'));
     }
+
+    // ---------- AI spend, budgets and on-prem support ----------
+    {
+      const spend = await db.aiSpend.find({});
+      const agents = new Set(spend.map(x => x.agent));
+      check('every Claude call is recorded in the spend ledger', spend.length > 10 && ['reader', 'classify', 'controls', 'docs', 'conformity', 'assistant', 'research'].every(a => agents.has(a)), [...agents].join(','));
+      check('calls are attributed to the client, system and run', spend.filter(x => x.source === 'run').every(x => x.orgId === orgA.id && !!x.systemId && !!x.runId) && spend.some(x => x.source === 'a2a' && x.agent === 'controls' && x.orgId === orgA.id));
+      check('each call is priced', spend.filter(x => x.model.startsWith('claude-opus')).every(x => x.costMicros > 0));
+      const { spendReport, spendBlocked } = await import('../src/lib/spend');
+      const rep = await spendReport();
+      check('the report adds up by client, agent and model', Math.abs(rep.byOrg.reduce((a, r) => a + r.cost, 0) - rep.total.cost) < 1e-6 && rep.byAgent.some(r => r.k === 'controls') && rep.daily.length >= 28);
+      const page = await get('/admin/spend', c.admin);
+      const ph = await page.text();
+      check('the admin Spend page shows the month by client, agent and model', page.status === 200 && ph.includes('AI spend') && ph.includes('Controls assessor') && ph.includes('By model'));
+      check('clients and assessors cannot open the Spend page', (await get('/admin/spend', c.clientAdmin)).status === 404);
+      const csv = await (await get('/admin/spend/export.csv', c.admin)).text();
+      check('spend can be exported as CSV', csv.startsWith('time_utc,client,system') && csv.split('\n').length > 10);
+      await db.spendBudgets.insert({ scope: orgA.id, monthlyCents: 1, alertPct: 80, hardStop: true });
+      check('a client over a hard-stop budget is refused new AI work', !!(await spendBlocked(orgA.id)) && (await send(`/api/systems/${s1.id}/agent`, 'POST', c.contrib, {})).status === 503);
+      check('the agent endpoint explains the budget stop', (await say(keyA, 'Show me our portfolio')).reply.includes('budget'));
+      for (let i = 0; i < 20 && (await db.spendBudgets.first({ scope: orgA.id }))?.alertedLevel !== 2; i++) await new Promise(r => setTimeout(r, 300));
+      const alerted = await db.spendBudgets.first({ scope: orgA.id });
+      check('admins are alerted once when a budget is reached', alerted?.alertedLevel === 2 && alerted.alertedMonth === new Date().toISOString().slice(0, 7));
+      await db.spendBudgets.update({ scope: orgA.id }, { hardStop: false });
+      check('a budget without a hard stop only alerts', !(await spendBlocked(orgA.id)));
+      await db.spendBudgets.remove({ scope: orgA.id });
+      const health = await get('/api/health');
+      const hb = await health.json();
+      check('the health check reports database and storage', health.status === 200 && hb.status === 'ok' && hb.checks.database === 'ok' && hb.checks.storage === 'ok' && hb.migrations >= 9);
+      const sysPage = await get('/admin/system', c.admin);
+      const sh = await sysPage.text();
+      check('the System page shows the installation status', sysPage.status === 200 && sh.includes('Database migrations') && sh.includes('009_spend'));
+      const { makeSignInLink } = await import('../src/lib/signin-link');
+      const link = await makeSignInLink(contrib.email, 60);
+      const cb = await fetch(link, { redirect: 'manual' });
+      const sess = (cb.headers.getSetCookie?.() || []).find(x => x.startsWith('next-auth.session-token'))?.split(';')[0];
+      check('a one-time sign-in link made without email signs the user in', !!sess && (await get(`/o/${orgA.slug}`, sess!)).status === 200);
+      check('the link works only once', !((await fetch(link, { redirect: 'manual' })).headers.getSetCookie?.() || []).some(x => x.startsWith('next-auth.session-token')));
+    }
     const sse = await fetch(`${BASE}/api/a2a`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${keyA}` },
       body: JSON.stringify({ jsonrpc: '2.0', id: 99, method: 'message/stream', params: { message: { kind: 'message', role: 'user', messageId: 'm-stream', parts: [{ kind: 'text', text: 'status of "Fraud model"' }] } } }) });
     const events = (await sse.text()).split('\n\n').filter(Boolean).map(chunk => JSON.parse(chunk.replace(/^data: /, '')));

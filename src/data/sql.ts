@@ -26,8 +26,17 @@ const g = globalThis as unknown as { __sqlPool?: Pool; __sqlReady?: Promise<void
 // Node can resolve "localhost" to IPv6 (::1), which some database users are not granted; use IPv4.
 const ipv4 = (h: string) => (h === 'localhost' ? '127.0.0.1' : h);
 
+/** TLS to the database: DB_SSL=true, with DB_SSL_CA (path to the CA certificate) for a private CA. DB_SSL_VERIFY=false
+ * skips certificate checks (not recommended). */
+function tls(): mysql.SslOptions | undefined {
+  if (!/^(1|true|yes|required)$/i.test(process.env.DB_SSL || '')) return undefined;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ca = process.env.DB_SSL_CA ? require('fs').readFileSync(process.env.DB_SSL_CA, 'utf8') : undefined;
+  return { ca, rejectUnauthorized: process.env.DB_SSL_VERIFY !== 'false' };
+}
+
 function config(): mysql.PoolOptions {
-  const common = { waitForConnections: true, connectionLimit: 8, timezone: 'Z', charset: 'utf8mb4_unicode_ci', supportBigNumbers: true, dateStrings: false } as const;
+  const common = { waitForConnections: true, connectionLimit: Number(process.env.DB_POOL_SIZE || 8), timezone: 'Z', charset: 'utf8mb4_unicode_ci', supportBigNumbers: true, dateStrings: false, ssl: tls() } as const;
   const url = process.env.DATABASE_URL;
   if (url && /^mysql|^mariadb/.test(url)) {
     const u = new URL(url.replace(/^mariadb:/, 'mysql:'));

@@ -1,0 +1,127 @@
+# Ituti AI Assurance: on-premises installation settings.
+# Copy to ituti.conf, fill in, then run:  ./install.sh install --config ituti.conf
+# One setting per line, KEY=value. Lines starting with # are ignored. Do not use quotes unless the value has spaces.
+# This file holds passwords: keep it readable by the installing administrator only (chmod 600).
+
+# ---------------------------------------------------------------------------------------------------------------
+# 1. Where to install
+# ---------------------------------------------------------------------------------------------------------------
+# Leave DEPLOY_HOST empty to install on this machine. Otherwise the installer copies itself to the server over SSH
+# and runs there (the account needs sudo, or ownership of DEPLOY_DIR and STORAGE_PATH).
+DEPLOY_HOST=
+DEPLOY_SSH_USER=
+DEPLOY_SSH_PORT=22
+# Optional: path to the private key used for SSH. Otherwise your SSH agent and ~/.ssh/config are used.
+DEPLOY_SSH_KEY=
+# Run commands on the server with sudo (needed to create the service, users and folders unless you own them).
+DEPLOY_SUDO=true
+
+# Where the application, its settings and logs are installed on the server.
+DEPLOY_DIR=/opt/ituti-assurance
+
+# docker  = runs in containers (Docker Engine 24+ with the compose plugin). Recommended.
+# node    = runs as a systemd service on Node.js 22+, for servers where containers are not allowed.
+RUNTIME=docker
+
+# ---------------------------------------------------------------------------------------------------------------
+# 2. Web address
+# ---------------------------------------------------------------------------------------------------------------
+# The address users will open, as they will type it (https in production). Used in sign-in links and agent cards.
+APP_URL=https://ai-assurance.example.internal
+# Port the app listens on, and the interface to bind (127.0.0.1 behind your own reverse proxy, 0.0.0.0 otherwise).
+APP_PORT=3000
+BIND_ADDRESS=127.0.0.1
+# Optional, docker runtime: serve HTTPS directly with your certificate (PEM files on the server). Port 443 is used.
+TLS_CERT_FILE=
+TLS_KEY_FILE=
+
+# ---------------------------------------------------------------------------------------------------------------
+# 3. Database (MySQL 8.0+ or MariaDB 10.6+)
+# ---------------------------------------------------------------------------------------------------------------
+# external = your database server. bundled = a MariaDB container on the same server (docker runtime only).
+DB_MODE=external
+DB_HOST=db.example.internal
+DB_PORT=3306
+DB_NAME=ituti_assurance
+DB_USER=ituti_app
+# Leave empty with DB_MODE=bundled to have one generated.
+DB_PASSWORD=
+# Optional: an administrative account. When given, the installer creates the database and the application user
+# (with only the rights it needs) if they do not exist. Otherwise ask your DBA to create both first.
+DB_ADMIN_USER=
+DB_ADMIN_PASSWORD=
+# TLS to the database: DB_SSL=true, and DB_SSL_CA=/path/to/ca.pem on the server for a private certificate authority.
+DB_SSL=false
+DB_SSL_CA=
+
+# ---------------------------------------------------------------------------------------------------------------
+# 4. Storage
+# ---------------------------------------------------------------------------------------------------------------
+# Folder for uploaded evidence documents. Use persistent, backed-up storage (local disk, SAN or NFS mount).
+STORAGE_PATH=/srv/ituti-assurance/data
+# Folder for backups made by "./install.sh backup" and before every upgrade.
+BACKUP_PATH=/srv/ituti-assurance/backups
+# Minimum free space, in GB, the installer insists on.
+STORAGE_MIN_FREE_GB=5
+
+# ---------------------------------------------------------------------------------------------------------------
+# 5. First administrator and sign-in
+# ---------------------------------------------------------------------------------------------------------------
+ADMIN_EMAIL=ai-governance@example.com
+ADMIN_NAME=AI Governance Lead
+# Self-service sign-up at /register: off (invitation only, recommended on-premises) or open.
+SELF_REGISTRATION=off
+
+# Outgoing email for sign-in links and invitations. Optional: without it, administrators issue one-time sign-in
+# links on the System page, and the installer prints one for the first administrator.
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASSWORD=
+EMAIL_FROM=AI Assurance <ai-assurance@example.com>
+
+# ---------------------------------------------------------------------------------------------------------------
+# 6. AI (Claude)
+# ---------------------------------------------------------------------------------------------------------------
+# Optional: without a key the platform works, but the assessment agents and evidence review are switched off.
+ANTHROPIC_API_KEY=
+# Optional: your organisation's API gateway in front of Anthropic (it must accept Anthropic's Messages API).
+ANTHROPIC_BASE_URL=
+ANTHROPIC_AGENT_MODEL=claude-opus-5-5
+ANTHROPIC_MODEL=claude-sonnet-5-5
+# Optional: give the evidence reader a cheaper model, for example claude-sonnet-5-5.
+ANTHROPIC_MODEL_READER=
+# Optional: your negotiated prices, JSON in US dollars per million tokens.
+# Example: {"claude-opus-5-5":{"input":4,"output":20,"cacheWrite":5,"cacheRead":0.2}}
+ANTHROPIC_PRICES=
+# Optional: outbound proxy for calls to Anthropic, and hosts that must bypass it.
+HTTPS_PROXY=
+NO_PROXY=localhost,127.0.0.1
+
+# ---------------------------------------------------------------------------------------------------------------
+# 7. Spend control (no control plane needed)
+# ---------------------------------------------------------------------------------------------------------------
+# Optional monthly AI budget in US dollars for the whole installation; administrators are emailed at the alert
+# level and when it is reached. With BUDGET_HARD_STOP=true new AI work stops until the budget is raised.
+MONTHLY_BUDGET_USD=
+BUDGET_ALERT_PERCENT=80
+BUDGET_HARD_STOP=false
+
+# ---------------------------------------------------------------------------------------------------------------
+# 8. Optional: IBM watsonx Orchestrate as control plane (traces per agent)
+# ---------------------------------------------------------------------------------------------------------------
+ORCHESTRATE_INSTANCE_URL=
+ORCHESTRATE_API_KEY=
+ORCHESTRATE_TENANT_ID=
+ORCHESTRATE_AGENT_IDS=
+ORCHESTRATE_AUTH=
+
+# ---------------------------------------------------------------------------------------------------------------
+# 9. Container image (docker runtime)
+# ---------------------------------------------------------------------------------------------------------------
+# Leave empty to use the image shipped in this bundle (images/*.tar.gz) or, failing that, to build it on the server
+# from the bundled application (needs BASE_IMAGE from a registry the server can reach).
+IMAGE=
+BASE_IMAGE=node:22-bookworm-slim
+MARIADB_IMAGE=mariadb:11.4
+CADDY_IMAGE=caddy:2.8

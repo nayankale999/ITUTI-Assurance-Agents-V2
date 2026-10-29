@@ -18,6 +18,7 @@ import { describeForAgent, validateValue, currentValue, fieldFor, displayValue, 
 import { detectModels } from './detect';
 import { SPECIALISTS, WRITERS, specialist, inRemit, modelFor, crewName, type Specialist, type SpecialistKey, type CrewKey } from './specialists';
 import { tokensOf, costOf, emptyUsage } from './pricing';
+import { withSpend } from '../spend';
 
 const MAX_PROPOSALS = 220;
 const MAX_MS = 30 * 60e3;
@@ -260,10 +261,10 @@ async function propose(ctx: Ctx, sp: Specialist, input: Record<string, unknown>)
 async function research(ctx: Ctx, provider: string, model: string) {
   const s = span(ctx, 'research', `Research the foundation models used by ${ctx.systemName}`);
   const t0 = Date.now();
-  const row = await getModel(provider, model, t => ctx.log(t), (m, msg, a, b) => {
+  const row = await withSpend({ agent: 'research' }, () => getModel(provider, model, t => ctx.log(t), (m, msg, a, b) => {
     const { t, cost } = ctx.meter.llm('research', m, msg, b - a);
     s.llm(m, t, cost, a, b, msg.stop_reason);
-  });
+  }));
   const t1 = Date.now();
   ctx.meter.tool('research');
   s.tool('lookup_model', t0, t1, row.status === 'ready', `${provider} ${model}`);
@@ -307,7 +308,11 @@ async function runTool(ctx: Ctx, sp: Specialist, name: string, input: Record<str
 }
 
 /** One specialist's tool-use loop. Returns its summary (for the reader, the evidence map). */
-async function runSpecialist(ctx: Ctx, sp: Specialist, firstMessage: string): Promise<string> {
+function runSpecialist(ctx: Ctx, sp: Specialist, firstMessage: string): Promise<string> {
+  return withSpend({ agent: sp.key }, () => specialistLoop(ctx, sp, firstMessage));
+}
+
+async function specialistLoop(ctx: Ctx, sp: Specialist, firstMessage: string): Promise<string> {
   const model = modelFor(sp.key, ctx.run.model);
   const s = span(ctx, sp.key, firstMessage);
   const done: { summary: string | null } = { summary: null };
@@ -395,7 +400,7 @@ export async function startRun(opts: { orgId: string; systemId: string; userId: 
     orgId: opts.orgId, systemId: opts.systemId, startedById: opts.userId, source: opts.source || 'web', model: agentModel(), status: 'queued', heartbeatAt: new Date(),
     specialist: sp, log: [{ at: new Date().toISOString(), text: sp ? `Queued for the ${crewName(sp).toLowerCase()}` : 'Queued' }],
   });
-  void execute(run).catch(e => console.error('[agent] run crashed', e));
+  void withSpend({ orgId: run.orgId, systemId: run.systemId, runId: run.id, source: 'run', agent: 'coordinator' }, () => execute(run)).catch(e => console.error('[agent] run crashed', e));
   return run;
 }
 

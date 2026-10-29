@@ -4,6 +4,7 @@ import { aiBlocked } from '@/lib/agent/access';
 import { startRun, STALE_MS } from '@/lib/agent/runner';
 import { displayValue, fieldFor, SECTION_LABEL } from '@/lib/agent/fields';
 import { audit } from '@/lib/audit';
+import { spendBlocked } from '@/lib/spend';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -36,7 +37,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
   if (!a.canEdit) return err(403, 'You cannot run the agent on this system.');
-  const blocked = aiBlocked(a.org); if (blocked) return err(503, blocked);
+  const blocked = aiBlocked(a.org) || await spendBlocked(a.org.id); if (blocked) return err(503, blocked);
   const run = await startRun({ orgId: a.system.orgId, systemId: id, userId: v.id });
   await audit({ orgId: a.system.orgId, systemId: id, userId: v.id, action: 'agent.started' });
   return json({ run: { id: run.id, status: run.status } }, 202);

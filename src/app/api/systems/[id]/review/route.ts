@@ -5,6 +5,7 @@ import { applicable, classify, TIERS, OPTS, type AssessmentData } from '@/lib/as
 import { summarise } from '@/lib/summary';
 import { audit } from '@/lib/audit';
 import { aiBlocked } from '@/lib/agent/access';
+import { withSpend, spendBlocked } from '@/lib/spend';
 import { llm } from '@/lib/agent/llm';
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -52,7 +53,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
-  const blocked = aiBlocked(a.org); if (blocked) return err(503, blocked);
+  const blocked = aiBlocked(a.org) || await spendBlocked(a.org.id); if (blocked) return err(503, blocked);
   if (!a.canEdit) return err(403, 'You cannot run a review on this system.');
   const sys = a.system.data as AssessmentData;
   const last = sys.aiReview?.at ? Date.parse(sys.aiReview.at) : 0;
@@ -62,11 +63,11 @@ export async function POST(req: Request, { params }: Ctx) {
 
   let text = '';
   try {
-    const msg = await llm().messages.create({
+    const msg = await withSpend({ orgId: a.org.id, systemId: id, source: 'review', agent: 'review' }, () => llm().messages.create({
       model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
       max_tokens: 8000,
       messages: [{ role: 'user', content: prompt }],
-    });
+    }));
     text = msg.content.map(b => (b.type === 'text' ? b.text : '')).join('');
   } catch (e) {
     console.error('[review] Anthropic call failed', e);

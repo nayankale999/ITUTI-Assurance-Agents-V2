@@ -4,7 +4,7 @@ import { SignOut } from './SignOut';
 import { ROLE_LABEL } from '@/lib/permissions';
 import type { Viewer } from '@/lib/session';
 
-export function TopBar({ viewer, current }: { viewer: Viewer; current?: 'clients' | 'team' }) {
+export function TopBar({ viewer, current }: { viewer: Viewer; current?: 'clients' | 'team' | 'spend' | 'system' }) {
   const staff = viewer.role !== 'CLIENT';
   return (
     <header className="top">
@@ -14,6 +14,8 @@ export function TopBar({ viewer, current }: { viewer: Viewer; current?: 'clients
           <nav aria-label="Main">
             <Link href="/admin" aria-current={current === 'clients' ? 'page' : undefined}>Clients</Link>
             {viewer.role === 'ITUTI_ADMIN' && <Link href="/admin/team" aria-current={current === 'team' ? 'page' : undefined}>Ituti team</Link>}
+            {viewer.role === 'ITUTI_ADMIN' && <Link href="/admin/spend" aria-current={current === 'spend' ? 'page' : undefined}>Spend</Link>}
+            {viewer.role === 'ITUTI_ADMIN' && <Link href="/admin/system" aria-current={current === 'system' ? 'page' : undefined}>System</Link>}
           </nav>
         )}
         <div className="spacer" />

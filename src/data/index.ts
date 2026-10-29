@@ -55,6 +55,8 @@ export type AgentRun = {
 export type SpecialistUsage = { calls: number; input: number; output: number; cacheRead: number; cacheWrite: number; costUsd: number; ms: number; proposals: number; tools: number; model: string };
 export type RunUsage = Record<string, SpecialistUsage>;
 export type PlanSettings = { systemId: string; orgId: string; auto: boolean; ownerId: string | null; ownerName: string | null; department: string | null; dueDays: number; updatedById: string | null; updatedAt: Date; lastAutoAt: Date | null };
+export type SpendRow = { id: string; orgId: string | null; systemId: string | null; runId: string | null; source: string; agent: string; model: string; inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number; costMicros: number; createdAt: Date };
+export type SpendBudget = { scope: string; monthlyCents: number; alertPct: number; hardStop: boolean; alertedMonth: string | null; alertedLevel: number; updatedById: string | null; updatedAt: Date };
 export type Proposal = {
   id: string; runId: string; systemId: string; path: string; label: string; value: unknown; previous: unknown; rationale: string;
   sources: Source[]; confidence: 'high' | 'medium' | 'low'; status: 'pending' | 'accepted' | 'rejected' | 'superseded';
@@ -110,6 +112,8 @@ export const DEFS = {
     inputTokens: 'int', outputTokens: 'int', proposals: 'int', source: 'str', createdAt: 'date', heartbeatAt: 'date?', finishedAt: 'date?',
     usage_detail: 'json?', specialist: 'str?',
   }),
+  aiSpend: def('ai_spend', ['id'], { id: 'str', orgId: 'str?', systemId: 'str?', runId: 'str?', source: 'str', agent: 'str', model: 'str', inputTokens: 'int', outputTokens: 'int', cacheRead: 'int', cacheWrite: 'int', costMicros: 'int', createdAt: 'date' }),
+  spendBudgets: def('spend_budgets', ['scope'], { scope: 'str', monthlyCents: 'int', alertPct: 'int', hardStop: 'bool', alertedMonth: 'str?', alertedLevel: 'int', updatedById: 'str?', updatedAt: 'date' }),
   planSettings: def('plan_settings', ['systemId'], { systemId: 'str', orgId: 'str', auto: 'bool', ownerId: 'str?', ownerName: 'str?', department: 'str?', dueDays: 'int', updatedById: 'str?', updatedAt: 'date', lastAutoAt: 'date?' }),
   apiKeys: def('api_keys', ['id'], { id: 'str', orgId: 'str', name: 'str', prefix: 'str', keyHash: 'str', createdById: 'str?', createdAt: 'date', lastUsedAt: 'date?', revokedAt: 'date?' }),
   usage: def('usage_events', ['id'], { id: 'str', orgId: 'str', kind: 'str', systemId: 'str?', runId: 'str?', source: 'str', billable: 'bool', plan: 'str', createdAt: 'date', reportedAt: 'date?' }),
@@ -146,6 +150,8 @@ function makeDb(exec: () => import('mysql2/promise').Pool | PoolConnection, inTx
     chunks: t<ChunkRow>(DEFS.chunks, () => ({ id: randomUUID() })),
     models: t<ModelRow>(DEFS.models, () => ({ ...withId(), updatedAt: now(), status: 'researching', dossier: null, sources: null, error: null, researchedAt: null })),
     agentRuns: t<AgentRun>(DEFS.agentRuns, () => ({ ...withId(), status: 'queued', startedById: null, log: [], summary: null, error: null, inputTokens: 0, outputTokens: 0, proposals: 0, source: 'web', heartbeatAt: null, finishedAt: null, usage_detail: null, specialist: null })),
+    aiSpend: t<SpendRow>(DEFS.aiSpend, () => ({ ...withId(), orgId: null, systemId: null, runId: null, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, costMicros: 0 })),
+    spendBudgets: t<SpendBudget>(DEFS.spendBudgets, () => ({ alertPct: 80, hardStop: false, alertedMonth: null, alertedLevel: 0, updatedById: null, updatedAt: now() })),
     planSettings: t<PlanSettings>(DEFS.planSettings, () => ({ auto: false, ownerId: null, ownerName: null, department: null, dueDays: 30, updatedById: null, updatedAt: now(), lastAutoAt: null })),
     apiKeys: t<ApiKey>(DEFS.apiKeys, () => ({ ...withId(), createdById: null, lastUsedAt: null, revokedAt: null })),
     usage: t<UsageEvent>(DEFS.usage, () => ({ ...withId(), systemId: null, runId: null, reportedAt: null })),
@@ -194,6 +200,7 @@ export async function deleteSystems(ids: string[]) {
     await t.teamSystems.remove({ systemId: ids });
     await t.shares.remove({ systemId: ids });
     await t.planSettings.remove({ systemId: ids });
+    await t.aiSpend.update({ systemId: ids }, { systemId: null, runId: null });
     await t.agentRuns.remove({ systemId: ids });
     await t.aiSystems.remove({ id: ids });
   });
@@ -212,6 +219,7 @@ export async function deleteOrg(orgId: string) {
     await t.apiKeys.remove({ orgId });
     await t.a2aTasks.remove({ orgId });
     await t.a2aContexts.remove({ orgId });
+    await t.spendBudgets.remove({ scope: orgId });
     await t.registrations.update({ orgId }, { orgId: null });
     const teamIds = (await t.teams.find({ orgId })).map(x => x.id);
     if (teamIds.length) { await t.teamMembers.remove({ teamId: teamIds }); await t.teamSystems.remove({ teamId: teamIds }); }
@@ -244,6 +252,7 @@ export async function deleteUser(userId: string) {
     await t.tasks.update({ createdById: userId }, { createdById: null });
     await t.planSettings.update({ ownerId: userId }, { ownerId: null, auto: false });
     await t.planSettings.update({ updatedById: userId }, { updatedById: null });
+    await t.spendBudgets.update({ updatedById: userId }, { updatedById: null });
     await t.shares.update({ createdById: userId }, { createdById: null });
     await t.users.remove({ id: userId });
   });

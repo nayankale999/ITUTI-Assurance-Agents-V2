@@ -61,6 +61,13 @@ A run is a crew of specialist agents, each with its own instructions, tools, fie
 
 A specialist cannot propose outside its fields. Each one's model calls, tokens (input, cache reads and writes, output), estimated cost, tool calls, proposals and time are stored per run in `agent_runs.usage_detail` and shown on the crew cards and, for Ituti admins, on the client's page (*Model use this month, by agent*). Optional settings: `ANTHROPIC_MODEL_<SPECIALIST>` to give one specialist another model (for example `ANTHROPIC_MODEL_READER=claude-sonnet-5-5`), and `ANTHROPIC_PRICES` (JSON, US dollars per million tokens by model id) to change the cost estimates. Web searches by the model researcher are billed separately by Anthropic and are not in the estimate.
 
+## On-premises installation
+
+`onprem/` holds a separate package for installing the whole platform on a client's own servers (Docker or Node.js,
+their MySQL or MariaDB, their storage), with a deployment agent that creates the database and tables, configures and
+verifies the service and issues the first sign-in link. AI spend is tracked on the **Spend** page with budgets, so no
+control plane is needed. See [onprem/README.md](onprem/README.md); build it with `onprem/build-bundle.sh`.
+
 ## Agent endpoint for IBM watsonx Orchestrate (A2A)
 
 The assessment agent can be used from IBM watsonx Orchestrate, or any other platform that speaks the **A2A protocol, version 0.3.0** (JSON-RPC 2.0 over HTTPS).
