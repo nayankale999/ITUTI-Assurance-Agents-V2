@@ -1,6 +1,6 @@
 /* HTTP handling shared by the A2A endpoints: API-key authentication, JSON-RPC and streamed (SSE) replies. */
 import { ServerCallContext, type JsonRpcTransportHandler } from '@a2a-js/sdk/server';
-import { orgForRequest } from '@/lib/apikeys';
+import { keyFailure, orgForRequest } from '@/lib/apikeys';
 import { OrgUser } from './store';
 
 const MAX_BODY = 40 * 1024 * 1024; // room for a 25 MB attachment once base64-encoded
@@ -11,9 +11,13 @@ const rpcError = (id: unknown, code: number, message: string, status = 200) =>
 export async function handleRpc(req: Request, transport: JsonRpcTransportHandler) {
   if (Number(req.headers.get('content-length') || 0) > MAX_BODY) return rpcError(null, -32600, 'Request too large.', 413);
   const auth = await orgForRequest(req);
-  if (!auth) return new Response(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Missing or invalid API key.' } }), {
-    status: 401, headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },
-  });
+  if (!auth) {
+    const why = await keyFailure(req);
+    console.warn(`[a2a] 401 ${new URL(req.url).pathname}: ${why} Headers present: ${[...req.headers.keys()].filter(h => h !== 'cookie').join(', ')}`);
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32001, message: `Missing or invalid API key. ${why}` } }), {
+      status: 401, headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },
+    });
+  }
   let body: unknown;
   try { body = await req.json(); } catch { return rpcError(null, -32700, 'Parse error: the body is not valid JSON.'); }
   if (Array.isArray(body)) return rpcError(null, -32600, 'Batch requests are not supported.');
