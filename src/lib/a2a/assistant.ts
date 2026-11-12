@@ -18,6 +18,7 @@ import { wouldBill, FREE_RERUN_DAYS } from '../usage';
 import { appUrl } from './card';
 import { withSpend, spendBlocked } from '../spend';
 import { orgOf } from './store';
+import { insertSystemWithinLimit, limitReached } from '../subscription';
 
 const MAX_TURNS = 8;
 const assistantModel = () => process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5';
@@ -106,7 +107,8 @@ async function runTool(turn: Turn, name: string, input: Record<string, any>): Pr
       const data = blankAssessment(name);
       if (input.description) data.profile!.description = String(input.description).slice(0, 5000);
       if (input.business_unit) data.profile!.client = String(input.business_unit).slice(0, 200);
-      const row = await db.aiSystems.insert({ orgId: org.id, data, ...summarise(data) });
+      const row = await insertSystemWithinLimit(org.id, t => t.aiSystems.insert({ orgId: org.id, data, ...summarise(data) }));
+      if (!row) return limitReached(org.subscription);
       await audit({ orgId: org.id, systemId: row.id, action: 'system.created', detail: { name, via: 'a2a' } });
       return JSON.stringify({ created: true, system_id: row.id, name, link: sysLink(org, row), next: 'Add evidence (paste text or attach documents), then start an assessment.' });
     }

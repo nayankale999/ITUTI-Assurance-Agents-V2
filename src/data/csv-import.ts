@@ -36,6 +36,7 @@ export async function importCsvOnce(db: Db) {
       if (!fs.existsSync(path.join(dir, def.file))) continue;
       let rows = readTable(def);
       if (name === 'sessions') rows = rows.filter(r => (r.expires as Date).getTime() > Date.now());
+      if (name === 'organizations') rows = rows.map(r => ({ ...r, subscription: 'enterprise' })); // clients from before tiers keep unlimited systems
       for (let i = 0; i < rows.length; i += 200) await (t[name] as { insertMany(r: unknown[]): Promise<unknown> }).insertMany(rows.slice(i, i + 200));
       counts.push(`${name} ${rows.length}`);
     }

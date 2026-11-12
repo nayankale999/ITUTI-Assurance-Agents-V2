@@ -89,7 +89,7 @@ async function main() {
     const contrib = await mk('contrib@bank.test', 'CLIENT');
     const viewer = await mk('viewer@bank.test', 'CLIENT');
     const otherClient = await mk('other@insurer.test', 'CLIENT');
-    const orgA = await db.organizations.insert({ name: `${tag} Bank`, slug: `${tag}-bank` });
+    const orgA = await db.organizations.insert({ name: `${tag} Bank`, slug: `${tag}-bank`, subscription: 'enterprise' });
     const orgB = await db.organizations.insert({ name: `${tag} Insurer`, slug: `${tag}-insurer` });
     await db.memberships.insertMany([
       { userId: clientAdmin.id, orgId: orgA.id, role: 'CLIENT_ADMIN' },
@@ -346,6 +346,21 @@ async function main() {
       check('MCP rejects an invented quote', (await call(mcp, 'verify_quote', { system: 'Fraud model', quote: 'The board approved the AI policy on 1 January 2019' })).json?.found === false);
       const reg = await call(mcp, 'register_system', { name: 'MCP chatbot', description: 'Customer service chatbot built on Example AI Example Model 1, used in the UK.', team: 'Digital' });
       check('MCP registers a system', reg.json?.created === true && !!(await db.aiSystems.first({ orgId: orgA.id, name: 'MCP chatbot' })));
+
+      // Subscription limits: orgB is on Free (2 systems) and already has one
+      const mcpB = await connect(keyB);
+      check('a Free client can register its second system', (await call(mcpB, 'register_system', { name: 'Free second' })).json?.created === true);
+      const third = await call(mcpB, 'register_system', { name: 'Free third' });
+      check('a Free client is refused a third system through MCP', third.error && /Free plan includes up to 2 AI systems/.test(third.text) && !(await db.aiSystems.first({ orgId: orgB.id, name: 'Free third' })), third.text);
+      const viaA2a = await say(keyB, 'Please register "Free fourth"');
+      check('a Free client is refused a third system through A2A', /Free plan includes up to 2/.test(viaA2a.reply) && !(await db.aiSystems.first({ orgId: orgB.id, name: 'Free fourth' })), viaA2a.reply.slice(0, 300));
+      await db.organizations.update({ id: orgB.id }, { subscription: 'standard' });
+      check('moving the client to Standard lets it add more', (await call(mcpB, 'register_system', { name: 'Free third' })).json?.created === true && (await db.aiSystems.count({ orgId: orgB.id })) === 3);
+      await mcpB.close();
+      const { insertSystemWithinLimit } = await import('../src/lib/subscription');
+      const race = await db.organizations.insert({ name: `${tag} Race`, slug: `${tag}-race` });
+      const made = await Promise.all(Array.from({ length: 6 }, (_, i) => insertSystemWithinLimit(race.id, t => t.aiSystems.insert({ orgId: race.id, name: `Race ${i}`, data: { profile: { name: `Race ${i}` } } }))));
+      check('six requests at once on a Free client create exactly two systems', made.filter(Boolean).length === 2 && (await db.aiSystems.count({ orgId: race.id })) === 2);
       const ev = await call(mcp, 'add_evidence', { system: 'MCP chatbot', title: 'Validation note', text: report.replace('Credit scoring', 'Chatbot') });
       const evf = await call(mcp, 'add_evidence', { system: 'MCP chatbot', title: 'policy.md', file_base64: Buffer.from('# AI policy\n\nThe chatbot is reviewed every quarter by the Digital risk committee, chaired by the COO.\n').toString('base64') });
       check('MCP saves pasted and attached evidence', ev.json?.saved === true && evf.json?.saved === true && (await db.documents.count({ systemId: reg.json?.system_id })) === 2);
@@ -671,7 +686,9 @@ async function main() {
     check('a stranger without a sign-up gets no sign-in link', !(await signInRequest(`${tag}-stranger@newco.test`)).url);
     const { startRegistration } = await import('../src/lib/registration');
     const regEmail = `${tag}-founder@newco.test`;
-    check('a sign-up is recorded', (await startRegistration({ email: regEmail, name: 'Nia Founder', orgName: `NewCo ${tag}` })) === 'created');
+    check('the sign-up page keeps an event source and states the free limit', await (async () => { const h = await (await get('/register?source=fintech-connect')).text(); return h.includes('name="source" value="fintech-connect"') && h.includes('up to 2 AI systems'); })());
+    check('the sign-up page drops a malformed source', !(await (await get('/register?source=%3Cb%3E')).text()).includes('name="source"'));
+    check('a sign-up is recorded', (await startRegistration({ email: regEmail, name: 'Nia Founder', orgName: `NewCo ${tag}`, source: 'fintech-connect' })) === 'created');
     check('an existing member signing up is just signed in', (await startRegistration({ email: clientAdmin.email, name: 'x', orgName: 'Dup' })) === 'existing');
     const signup = await signInRequest(regEmail);
     check('the new sign-up gets a sign-in link', !!signup.url);
@@ -683,6 +700,13 @@ async function main() {
       const o = m ? await db.organizations.first({ id: m.orgId }) : null;
       check('following the link creates the workspace with them as client admin', m?.role === 'CLIENT_ADMIN' && o?.name === `NewCo ${tag}` && u?.name === 'Nia Founder', JSON.stringify({ m, o }));
       check('AI assistance starts switched off for a new sign-up', o?.aiEnabled === false);
+      check('a sign-up starts on Free and remembers where it came from', o?.subscription === 'free' && o?.signupSource === 'fintech-connect', JSON.stringify(o));
+      if (cookie && o) {
+        check('a new Free workspace shows its allowance', (await (await get(`/o/${o.slug}`, cookie)).text()).includes('0 of 2 AI systems used'));
+        await db.aiSystems.insertMany([1, 2].map(i => ({ orgId: o.id, name: `Signup ${i}`, data: { profile: { name: `Signup ${i}` } } })));
+        const page = await (await get(`/o/${o.slug}`, cookie)).text();
+        check('at the limit the add form is replaced by an upgrade link', page.includes('2 of 2 AI systems used') && !page.includes('+ Add AI system') && page.includes('ask Ituti about Standard or Enterprise'));
+      }
       check('the sign-up is completed only once', (await db.registrations.find({ email: regEmail })).every(x => x.completedAt && x.orgId === o?.id));
       if (cookie && o) check('the new client admin opens their workspace', (await get(`/o/${o.slug}`, cookie)).status === 200);
       if (cookie) check('the new client cannot open another client', (await get(`/o/${orgA.slug}`, cookie)).status === 404);

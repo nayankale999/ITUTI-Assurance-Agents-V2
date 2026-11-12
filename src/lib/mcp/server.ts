@@ -25,6 +25,7 @@ import { withSpend, spendBlocked, spendReport, budgets, monthKey, AGENT_LABEL, S
 import { resolve, sysLink, latestRun } from '../a2a/assistant';
 import { appUrl } from '../a2a/card';
 import { APP_VERSION } from '../version';
+import { insertSystemWithinLimit, limitReached } from '../subscription';
 import { systemAccess, type Viewer } from '../session';
 
 const INSTRUCTIONS = `Ituti AI Assurance assesses AI systems against the EU AI Act, UK requirements (AI principles, FCA Consumer Duty, SM&CR, PRA SS1/23), ISO/IEC 42001 and the NIST AI RMF. These tools act only on the AI systems of the organisation whose API key is used.
@@ -117,7 +118,8 @@ export function buildServer(ctx: Ctx) {
     if (business_unit) p.client = business_unit;
     if (team) p.team = team;
     if (owner) p.owner = owner;
-    const row = await db.aiSystems.insert({ orgId: org.id, data, ...summarise(data), createdById: uid, updatedById: uid });
+    const row = await insertSystemWithinLimit(org.id, t => t.aiSystems.insert({ orgId: org.id, data, ...summarise(data), createdById: uid, updatedById: uid }));
+    if (!row) return fail(limitReached(org.subscription));
     await audit({ orgId: org.id, systemId: row.id, userId: uid, action: 'system.created', detail: { name, ...via } });
     return text({ created: true, system_id: row.id, name, link: sysLink(org, row), next: 'Add evidence with add_evidence, then start_assessment.' });
   });

@@ -116,6 +116,13 @@ export const MIGRATIONS: [string, string[]][] = [
       scope VARCHAR(200) NOT NULL, redirectUri TEXT NULL, codeChallenge VARCHAR(128) NULL, resource VARCHAR(500) NULL, expiresAt ${AT}, usedAt ${AT_NULL}, revokedAt ${AT_NULL},
       lastUsedAt ${AT_NULL}, familyId ${ID}, createdAt ${AT}, UNIQUE KEY uq_grant_token (tokenHash), KEY ix_grant_user (userId), KEY ix_grant_org (orgId), KEY ix_grant_family (familyId)) ${T}`,
   ]],
+  ['011_subscriptions', [
+    // New clients start on Free; clients that existed before tiers keep unlimited systems until an admin changes them.
+    `ALTER TABLE organizations ADD COLUMN subscription VARCHAR(16) NOT NULL DEFAULT 'free'`,
+    `UPDATE organizations SET subscription = 'enterprise'`,
+    `ALTER TABLE organizations ADD COLUMN signupSource VARCHAR(40) NULL`,
+    `ALTER TABLE registrations ADD COLUMN source VARCHAR(40) NULL`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */

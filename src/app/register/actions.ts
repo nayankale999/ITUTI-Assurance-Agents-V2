@@ -1,6 +1,7 @@
 'use server';
 import { z } from 'zod';
 import { startRegistration, registrationOpen } from '@/lib/registration';
+import { cleanSource } from '@/lib/subscription';
 
 const schema = z.object({
   name: z.string().trim().min(2, 'Enter your name.').max(120),
@@ -17,7 +18,7 @@ export async function registerClient(_: RegisterState, fd: FormData): Promise<Re
   const parsed = schema.safeParse(Object.fromEntries(fd));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || 'Check the form and try again.' };
   try {
-    const r = await startRegistration(parsed.data);
+    const r = await startRegistration({ ...parsed.data, source: cleanSource(fd.get('source')) });
     return { email: parsed.data.email, existing: r === 'existing' };
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Something went wrong. Try again.' };

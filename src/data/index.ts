@@ -11,7 +11,8 @@ export type User = { id: string; name: string | null; email: string; emailVerifi
 export type Session = { sessionToken: string; userId: string; expires: Date };
 export type VerificationToken = { identifier: string; token: string; expires: Date };
 export type Plan = 'per_assessment' | 'enterprise' | 'internal';
-export type Org = { id: string; name: string; slug: string; aiEnabled: boolean; plan: Plan; createdAt: Date };
+export type Subscription = 'free' | 'standard' | 'enterprise';
+export type Org = { id: string; name: string; slug: string; aiEnabled: boolean; plan: Plan; subscription: Subscription; signupSource: string | null; createdAt: Date };
 export type Membership = { userId: string; orgId: string; role: OrgRoleT; createdAt: Date };
 export type AssessorAssignment = { userId: string; orgId: string; createdAt: Date };
 export type AiSystemRow = {
@@ -69,7 +70,7 @@ export type Proposal = {
 export type ApiKey = { id: string; orgId: string; name: string; prefix: string; keyHash: string; createdById: string | null; createdAt: Date; lastUsedAt: Date | null; revokedAt: Date | null };
 export type UsageEvent = { id: string; orgId: string; kind: 'assessment'; systemId: string | null; runId: string | null; source: string; billable: boolean; plan: string; createdAt: Date; reportedAt: Date | null };
 export type A2ATaskRow = { id: string; orgId: string; contextId: string; task: unknown; createdAt: Date; updatedAt: Date };
-export type Registration = { id: string; email: string; name: string; orgName: string; expiresAt: Date; completedAt: Date | null; orgId: string | null; createdAt: Date };
+export type Registration = { id: string; email: string; name: string; orgName: string; source: string | null; expiresAt: Date; completedAt: Date | null; orgId: string | null; createdAt: Date };
 export type SystemChange = { id: string; orgId: string; systemId: string; userId: string | null; path: string; label: string; before: string | null; after: string | null; via: 'editor' | 'agent' | 'a2a'; createdAt: Date; updatedAt: Date };
 export type ShareLink = { id: string; orgId: string; systemId: string; kind: 'card'; tokenHash: string; createdById: string | null; createdAt: Date; revokedAt: Date | null; lastViewedAt: Date | null };
 export type Team = { id: string; orgId: string; name: string; leadId: string | null; createdAt: Date };
@@ -86,7 +87,7 @@ export const DEFS = {
   users: def('users', ['id'], { id: 'str', email: 'str', name: 'str?', role: 'str', disabled: 'bool', emailVerified: 'date?', image: 'str?', createdAt: 'date' }),
   sessions: def('sessions', ['sessionToken'], { sessionToken: 'str', userId: 'str', expires: 'date' }),
   verificationTokens: def('verification_tokens', ['identifier', 'token'], { identifier: 'str', token: 'str', expires: 'date' }),
-  organizations: def('organizations', ['id'], { id: 'str', name: 'str', slug: 'str', aiEnabled: 'bool', plan: 'str', createdAt: 'date' }),
+  organizations: def('organizations', ['id'], { id: 'str', name: 'str', slug: 'str', aiEnabled: 'bool', plan: 'str', subscription: 'str', signupSource: 'str?', createdAt: 'date' }),
   memberships: def('memberships', ['userId', 'orgId'], { userId: 'str', orgId: 'str', role: 'str', createdAt: 'date' }),
   assessorAssignments: def('assessor_assignments', ['userId', 'orgId'], { userId: 'str', orgId: 'str', createdAt: 'date' }),
   aiSystems: def('ai_systems', ['id'], {
@@ -124,7 +125,7 @@ export const DEFS = {
   usage: def('usage_events', ['id'], { id: 'str', orgId: 'str', kind: 'str', systemId: 'str?', runId: 'str?', source: 'str', billable: 'bool', plan: 'str', createdAt: 'date', reportedAt: 'date?' }),
   a2aTasks: def('a2a_tasks', ['id'], { id: 'str', orgId: 'str', contextId: 'str', task: 'json', createdAt: 'date', updatedAt: 'date' }),
   a2aContexts: def('a2a_contexts', ['id'], { id: 'str', orgId: 'str', history: 'json', updatedAt: 'date' }),
-  registrations: def('registrations', ['id'], { id: 'str', email: 'str', name: 'str', orgName: 'str', expiresAt: 'date', completedAt: 'date?', orgId: 'str?', createdAt: 'date' }),
+  registrations: def('registrations', ['id'], { id: 'str', email: 'str', name: 'str', orgName: 'str', source: 'str?', expiresAt: 'date', completedAt: 'date?', orgId: 'str?', createdAt: 'date' }),
   changes: def('system_changes', ['id'], { id: 'str', orgId: 'str', systemId: 'str', userId: 'str?', path: 'str', label: 'str', before: 'str?', after: 'str?', via: 'str', createdAt: 'date', updatedAt: 'date' }),
   shares: def('share_links', ['id'], { id: 'str', orgId: 'str', systemId: 'str', kind: 'str', tokenHash: 'str', createdById: 'str?', createdAt: 'date', revokedAt: 'date?', lastViewedAt: 'date?' }),
   teams: def('teams', ['id'], { id: 'str', orgId: 'str', name: 'str', leadId: 'str?', createdAt: 'date' }),
@@ -143,7 +144,7 @@ function makeDb(exec: () => import('mysql2/promise').Pool | PoolConnection, inTx
     users: t<User>(DEFS.users, () => ({ ...withId(), name: null, image: null, emailVerified: null, role: 'CLIENT', disabled: false })),
     sessions: t<Session>(DEFS.sessions),
     verificationTokens: t<VerificationToken>(DEFS.verificationTokens),
-    organizations: t<Org>(DEFS.organizations, () => ({ ...withId(), aiEnabled: false, plan: 'per_assessment' })),
+    organizations: t<Org>(DEFS.organizations, () => ({ ...withId(), aiEnabled: false, plan: 'per_assessment', subscription: 'free', signupSource: null })),
     memberships: t<Membership>(DEFS.memberships, () => ({ createdAt: now() })),
     assessorAssignments: t<AssessorAssignment>(DEFS.assessorAssignments, () => ({ createdAt: now() })),
     aiSystems: t<AiSystemRow>(DEFS.aiSystems, () => ({ ...withId(), updatedAt: now(), tier: 'unknown', riskScore: null, readiness: 0, openIncidents: 0, version: 1, createdById: null, updatedById: null })),
@@ -164,7 +165,7 @@ function makeDb(exec: () => import('mysql2/promise').Pool | PoolConnection, inTx
     usage: t<UsageEvent>(DEFS.usage, () => ({ ...withId(), systemId: null, runId: null, reportedAt: null })),
     a2aTasks: t<A2ATaskRow>(DEFS.a2aTasks, () => ({ createdAt: now(), updatedAt: now() })),
     a2aContexts: t<A2AContextRow>(DEFS.a2aContexts, () => ({ history: [], updatedAt: now() })),
-    registrations: t<Registration>(DEFS.registrations, () => ({ ...withId(), completedAt: null, orgId: null })),
+    registrations: t<Registration>(DEFS.registrations, () => ({ ...withId(), source: null, completedAt: null, orgId: null })),
     changes: t<SystemChange>(DEFS.changes, () => ({ ...withId(), updatedAt: now(), userId: null, before: null, after: null, via: 'editor' })),
     shares: t<ShareLink>(DEFS.shares, () => ({ ...withId(), kind: 'card', createdById: null, revokedAt: null, lastViewedAt: null })),
     teams: t<Team>(DEFS.teams, () => ({ ...withId(), leadId: null })),

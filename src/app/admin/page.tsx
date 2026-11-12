@@ -7,6 +7,7 @@ import { SiteFoot } from '@/components/Brand';
 import { ActionForm, Submit } from '@/components/ActionForm';
 import { createOrg } from '@/app/actions';
 import { ResumeBanner } from '@/components/ResumeBanner';
+import { SUBSCRIPTION_LABEL, SUBSCRIPTIONS, systemLimit } from '@/lib/subscription';
 
 export const metadata = { title: 'Clients' };
 
@@ -51,11 +52,12 @@ export default async function AdminHome() {
         <section className="panel">
           {orgs.length ? (
             <div className="scroll"><table className="ledger">
-              <thead><tr><th>Client</th><th className="num">Systems</th><th className="num">High risk</th><th className="num">Flagged</th><th>Average readiness</th><th className="num">Open incidents</th><th className="num">Members</th></tr></thead>
+              <thead><tr><th>Client</th><th>Subscription</th><th className="num">Systems</th><th className="num">High risk</th><th className="num">Flagged</th><th>Average readiness</th><th className="num">Open incidents</th><th className="num">Members</th></tr></thead>
               <tbody>{orgs.map(o => { const s = by.get(o.id); return (
                 <tr key={o.id}>
                   <td><Link href={`/o/${o.slug}`} className="sysname" style={{ textDecoration: 'none', color: 'inherit' }}>{o.name}</Link></td>
-                  <td className="num">{s?.systems ?? 0}</td>
+                  <td>{SUBSCRIPTION_LABEL[o.subscription]}{o.signupSource && <small className="muted" style={{ display: 'block' }}>via {o.signupSource}</small>}</td>
+                  <td className="num">{(() => { const n = s?.systems ?? 0, lim = systemLimit(o.subscription); return lim != null && n >= lim ? <span className="pill t-warn" title="At the subscription limit">{n} / {lim}</span> : lim != null ? `${n} / ${lim}` : n; })()}</td>
                   <td className="num">{s?.high ?? 0}</td>
                   <td className="num">{s?.flagged ? <span className="pill t-crit">{s.flagged}</span> : 0}</td>
                   <td><div className="barwrap"><div className="bar"><i style={{ width: `${s?.readiness ?? 0}%` }} /></div>{s?.readiness ?? 0}%</div></td>
@@ -73,6 +75,9 @@ export default async function AdminHome() {
             <div className="body">
               <ActionForm action={createOrg} className="formrow" resetOnSuccess>
                 <label className="field"><span>Client organisation name</span><input type="text" name="name" id="org-name" required minLength={2} maxLength={120} placeholder="e.g. Northbridge Building Society" /></label>
+                <label className="field"><span>Subscription</span>
+                  <select name="subscription" id="org-subscription" defaultValue="standard">{SUBSCRIPTIONS.map(k => <option key={k} value={k}>{SUBSCRIPTION_LABEL[k]}</option>)}</select>
+                </label>
                 <Submit className="btn primary">Add client</Submit>
               </ActionForm>
             </div>

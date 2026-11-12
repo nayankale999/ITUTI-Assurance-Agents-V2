@@ -11,6 +11,7 @@ import { sendActionEmail } from '@/lib/mail';
 import { audit } from '@/lib/audit';
 import { blankAssessment, summarise } from '@/lib/summary';
 import { createApiKey } from '@/lib/apikeys';
+import { insertSystemWithinLimit, limitReached, SUBSCRIPTIONS } from '@/lib/subscription';
 import { makeSignInLink } from '@/lib/signin-link';
 
 export type ActionState = { ok?: string; error?: string } | null;
@@ -40,8 +41,9 @@ export async function createOrg(_: ActionState, fd: FormData): Promise<ActionSta
     const v = await viewerOrError();
     if (v.role !== 'ITUTI_ADMIN') return { error: 'Only Ituti admins can add clients.' };
     const name = z.string().trim().min(2).max(120).parse(fd.get('name'));
-    const org = await db.organizations.insert({ name, slug: slugify(name) });
-    await audit({ orgId: org.id, userId: v.id, action: 'org.created', detail: { name } });
+    const subscription = z.enum(SUBSCRIPTIONS as [string, ...string[]]).catch('standard').parse(fd.get('subscription')) as (typeof SUBSCRIPTIONS)[number];
+    const org = await db.organizations.insert({ name, slug: slugify(name), subscription });
+    await audit({ orgId: org.id, userId: v.id, action: 'org.created', detail: { name, subscription } });
     revalidatePath('/admin');
     return { ok: `Added ${name}.` };
   } catch (e) { return fail(e); }
@@ -100,6 +102,20 @@ export async function setOrgPlan(_: ActionState, fd: FormData): Promise<ActionSt
     await audit({ orgId, userId: v.id, action: 'org.plan', detail: { plan } });
     revalidatePath('/', 'layout');
     return { ok: 'Plan saved.' };
+  } catch (e) { return fail(e); }
+}
+
+export async function setOrgSubscription(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    if (v.role !== 'ITUTI_ADMIN') return { error: 'Only Ituti admins can change subscriptions.' };
+    const orgId = String(fd.get('orgId'));
+    const subscription = z.enum(SUBSCRIPTIONS as [string, ...string[]]).parse(fd.get('subscription')) as (typeof SUBSCRIPTIONS)[number];
+    const [org] = await db.organizations.update({ id: orgId }, { subscription });
+    if (!org) return { error: 'Client not found.' };
+    await audit({ orgId, userId: v.id, action: 'org.subscription', detail: { subscription } });
+    revalidatePath('/', 'layout');
+    return { ok: 'Subscription saved.' };
   } catch (e) { return fail(e); }
 }
 
@@ -332,7 +348,8 @@ export async function createSystem(_: ActionState, fd: FormData): Promise<Action
     if (!org) return { error: 'Organisation not found.' };
     const name = z.string().trim().min(1).max(200).catch('Untitled system').parse(fd.get('name'));
     const data = blankAssessment(name);
-    const row = await db.aiSystems.insert({ orgId, data, ...summarise(data), createdById: v.id, updatedById: v.id });
+    const row = await insertSystemWithinLimit(orgId, t => t.aiSystems.insert({ orgId, data, ...summarise(data), createdById: v.id, updatedById: v.id }));
+    if (!row) return { error: limitReached(org.subscription) };
     await audit({ orgId, systemId: row.id, userId: v.id, action: 'system.created', detail: { name } });
     dest = `/o/${org.slug}/systems/${row.id}`;
   } catch (e) { return fail(e); }

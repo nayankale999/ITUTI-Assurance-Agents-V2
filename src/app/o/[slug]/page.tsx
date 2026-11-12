@@ -3,7 +3,8 @@ import { db } from '@/data';
 import { orgForPage } from '@/lib/session';
 import { ROLE_LABEL } from '@/lib/permissions';
 import { ActionForm, Submit } from '@/components/ActionForm';
-import { createSystem, renameOrg, setOrgAi, setOrgPlan, createOrgApiKey, revokeOrgApiKey, revokeConnectedApp } from '@/app/actions';
+import { createSystem, renameOrg, setOrgAi, setOrgPlan, setOrgSubscription, createOrgApiKey, revokeOrgApiKey, revokeConnectedApp } from '@/app/actions';
+import { SUBSCRIPTION_LABEL, SUBSCRIPTIONS, limitText, systemLimit } from '@/lib/subscription';
 import { connectedApps } from '@/lib/oauth';
 import { PLAN_LABEL, monthUsage, FREE_RERUN_DAYS } from '@/lib/usage';
 import { inventory } from '@/lib/portfolio';
@@ -34,6 +35,8 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
   const inc = rows.reduce((a, s) => a + s.openIncidents, 0);
   const complete = rows.filter(s => s.stage === 5).length;
   const roleNote = caps.staff ? null : caps.orgRole ? `You are signed in as ${ROLE_LABEL[caps.orgRole].toLowerCase()}.` : null;
+  const limit = systemLimit(org.subscription);
+  const full = limit != null && rows.length >= limit;
 
   return (
     <>
@@ -43,7 +46,7 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
           <h1>{org.name}</h1>
           <p className="muted">One record of every AI system: who is responsible for it, what it is for, its EU AI Act risk tier and how far its assessment has got.{roleNote ? ` ${roleNote}` : ''}</p>
         </div>
-        {caps.createSystems && (
+        {caps.createSystems && !full && (
           <ActionForm action={createSystem} className="formrow" style={{ alignItems: 'center' }}>
             <input type="hidden" name="orgId" value={org.id} />
             <input type="text" name="name" id="new-system" placeholder="System name" aria-label="New system name" style={{ width: 220 }} />
@@ -51,6 +54,11 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
           </ActionForm>
         )}
       </section>
+      <p className="muted" style={{ fontSize: 13, marginTop: -4 }}>
+        <span className="pill t-info">{SUBSCRIPTION_LABEL[org.subscription]}</span>{' '}
+        {limit == null ? 'Unlimited AI systems.' : `${rows.length} of ${limit} AI system${limit === 1 ? '' : 's'} used.`}
+        {full && caps.createSystems && <> Your {SUBSCRIPTION_LABEL[org.subscription]} plan includes {limitText(org.subscription)}. To add more, <a href={`mailto:info@itutitech.com?subject=${encodeURIComponent(`Upgrade ${org.name} from the ${SUBSCRIPTION_LABEL[org.subscription]} plan`)}`}>ask Ituti about Standard or Enterprise</a>.</>}
+      </p>
       <ResumeBanner slug={org.slug} systemIds={rows.map(r => r.id)} />
       <section className="stats" aria-label="Inventory summary">
         <div className="stat"><b>{rows.length}</b><span>AI systems</span></div>
@@ -83,6 +91,16 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
                 <small className="muted">When on, the assessment agent and AI review send this client’s documents and assessment text to Anthropic’s API. Switch it on only once the client has agreed.</small>
               </div>
               <Submit className={org.aiEnabled ? 'btn' : 'btn primary'}>{org.aiEnabled ? 'Switch off' : 'Switch on'}</Submit>
+            </ActionForm>
+          )}
+          {viewer.role === 'ITUTI_ADMIN' && (
+            <ActionForm action={setOrgSubscription} className="formrow" style={{ alignItems: 'flex-end' }}>
+              <input type="hidden" name="orgId" value={org.id} />
+              <label className="field"><span>Subscription</span>
+                <select name="subscription" id="org-subscription" defaultValue={org.subscription}>{SUBSCRIPTIONS.map(k => <option key={k} value={k}>{SUBSCRIPTION_LABEL[k]} ({limitText(k)})</option>)}</select>
+              </label>
+              <Submit>Save subscription</Submit>
+              <small className="muted" style={{ flex: '1 1 260px' }}>{org.signupSource ? <>Signed up through the <b>{org.signupSource}</b> link. </> : null}Lowering the subscription keeps existing systems; the client just cannot add more until it is under the limit.</small>
             </ActionForm>
           )}
           {viewer.role === 'ITUTI_ADMIN' && <AgentAccess orgId={org.id} plan={org.plan} aiEnabled={org.aiEnabled} />}

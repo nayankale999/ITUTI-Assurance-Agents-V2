@@ -3,7 +3,7 @@ import { useActionState, useEffect, useRef } from 'react';
 import { signIn } from 'next-auth/react';
 import { registerClient, type RegisterState } from './actions';
 
-export function RegisterForm() {
+export function RegisterForm({ source }: { source: string | null }) {
   const [state, action, pending] = useActionState<RegisterState, FormData>(registerClient, null);
   const sent = useRef('');
   useEffect(() => {
@@ -16,6 +16,7 @@ export function RegisterForm() {
   return (
     <form action={action} style={{ display: 'grid', gap: 12 }}>
       {state?.error && <p className="err" role="alert">{state.error}</p>}
+      {source && <input type="hidden" name="source" value={source} />}
       <label className="field"><span>Your name</span><input name="name" id="name" required autoComplete="name" maxLength={120} /></label>
       <label className="field"><span>Work email</span><input type="email" name="email" id="email" required autoComplete="email" maxLength={254} /></label>
       <label className="field"><span>Organisation</span><input name="orgName" id="orgName" required autoComplete="organization" maxLength={120} /></label>

@@ -21,7 +21,7 @@ The administration area is reached from the top bar: **Clients**, **Ituti team**
 
 ### Add a client
 
-Under **Clients**, use **Add a client** with the client organisation's name. Then open the client and use **Invite someone from** *the client* to invite its first client admin; from there, people, teams and systems are theirs to set up. **Delete client** removes a client and everything in it: use it with care.
+Under **Clients**, use **Add a client** with the client organisation's name and its subscription (Standard unless you choose otherwise). Then open the client and use **Invite someone from** *the client* to invite its first client admin; from there, people, teams and systems are theirs to set up. **Delete client** removes a client and everything in it: use it with care.
 
 ### Client settings
 
@@ -29,7 +29,20 @@ On the client's page, **Client settings** holds:
 
 - **Client name.**
 - **AI assistance** on or off. When on, the assessment agent and AI review send the client's documents and assessment text to Anthropic's API. Switch it on only once the client has agreed. When off, the agent refuses to run and everything is done by hand.
+- **Subscription:** *Free*, *Standard* or *Enterprise*, which sets how many AI systems the client can keep (see below).
 - **Plan:** *Per assessment*, *Enterprise (flat fee)* or *Internal or trial (not billed)*. The plan drives how usage is reported for billing.
+
+### Subscriptions
+
+| Subscription | AI systems | Who is on it |
+| --- | --- | --- |
+| Free | up to 2 | Every self-service sign-up, for example visitors who scan the FinTech Connect QR code |
+| Standard | up to 10 | Paying clients; the default when you add a client yourself |
+| Enterprise | unlimited | Larger paying clients, and every client that existed before subscriptions were introduced |
+
+The **Clients** list shows each client's subscription, how many systems it has against its limit (highlighted when full) and, for sign-ups, the link it came through. When a client reaches its limit, **Add AI system** is replaced by a note with a link to ask Ituti about upgrading, and registering a system through MCP or the A2A agent is refused with the same explanation. Lowering a subscription never deletes systems; the client simply cannot add more until it is under the limit. Change the limits with `SYSTEM_LIMITS` (for example `free=2,standard=10,enterprise=unlimited`).
+
+Sign-up links can carry a source, such as `https://assurance.ituti.tech/register?source=fintech-connect`. The source is kept on the client, shown on the Clients list and client page, and included in the sign-up email to Ituti admins, so leads from an event can be told apart. A source is lower-case letters, digits and hyphens, up to 40 characters.
 
 ### People and invitations
 
@@ -231,6 +244,7 @@ On-premises these are set in `ituti.conf`; on the cloud service, as environment 
 | `BACKUP_PATH`, `STORAGE_MIN_FREE_GB` | Backups; minimum free space | `/srv/ituti-assurance/backups`, 5 |
 | `ADMIN_EMAIL`, `ADMIN_NAME` (app: `BOOTSTRAP_ADMIN_EMAIL`) | First administrator | required |
 | `SELF_REGISTRATION` | `off` or `open` | off on-premises |
+| `SYSTEM_LIMITS` | AI systems allowed per subscription, e.g. `free=2,standard=10,enterprise=unlimited` | those values |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` | Outgoing email | none; 587 |
 | `ANTHROPIC_API_KEY` | Turns the agents on | empty (agents off) |
 | `ANTHROPIC_BASE_URL` | Your API gateway in front of Anthropic | direct |
