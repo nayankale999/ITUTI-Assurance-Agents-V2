@@ -11,7 +11,7 @@ import { sendActionEmail } from '@/lib/mail';
 import { audit } from '@/lib/audit';
 import { blankAssessment, summarise } from '@/lib/summary';
 import { createApiKey } from '@/lib/apikeys';
-import { insertSystemWithinLimit, limitReached, SUBSCRIPTIONS } from '@/lib/subscription';
+import { insertSystemWithinLimit, limitReached, SUBSCRIPTIONS, SUBSCRIPTION_LABEL, requestUpgrade as recordUpgradeRequest, decideUpgrade as recordUpgradeDecision } from '@/lib/subscription';
 import { makeSignInLink } from '@/lib/signin-link';
 
 export type ActionState = { ok?: string; error?: string } | null;
@@ -116,6 +116,34 @@ export async function setOrgSubscription(_: ActionState, fd: FormData): Promise<
     await audit({ orgId, userId: v.id, action: 'org.subscription', detail: { subscription } });
     revalidatePath('/', 'layout');
     return { ok: 'Subscription saved.' };
+  } catch (e) { return fail(e); }
+}
+
+export async function requestUpgrade(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    const orgId = String(fd.get('orgId'));
+    const caps = await capsFor(v, orgId);
+    if (!caps.manage) return { error: 'Only your organisation’s admin can request a plan change.' };
+    const toTier = z.enum(SUBSCRIPTIONS as [string, ...string[]]).parse(fd.get('toTier')) as (typeof SUBSCRIPTIONS)[number];
+    const message = z.string().trim().max(1000).parse(fd.get('message') ?? '') || null;
+    await recordUpgradeRequest({ orgId, toTier, message, user: v });
+    revalidatePath('/', 'layout');
+    return { ok: 'Request sent. The Ituti team will confirm by email, usually within one working day.' };
+  } catch (e) {
+    if (e instanceof z.ZodError) return { error: 'Keep the message under 1,000 characters.' };
+    return fail(e);
+  }
+}
+
+export async function decideUpgrade(_: ActionState, fd: FormData): Promise<ActionState> {
+  try {
+    const v = await viewerOrError();
+    if (v.role !== 'ITUTI_ADMIN') return { error: 'Only Ituti admins can decide upgrade requests.' };
+    const approve = fd.get('decision') === 'approve';
+    const r = await recordUpgradeDecision({ requestId: String(fd.get('requestId')), approve, adminId: v.id });
+    revalidatePath('/', 'layout');
+    return { ok: approve ? `Approved: the client is now on ${SUBSCRIPTION_LABEL[r.toTier]}.` : 'Declined. The requester has been told by email.' };
   } catch (e) { return fail(e); }
 }
 
@@ -349,7 +377,7 @@ export async function createSystem(_: ActionState, fd: FormData): Promise<Action
     const name = z.string().trim().min(1).max(200).catch('Untitled system').parse(fd.get('name'));
     const data = blankAssessment(name);
     const row = await insertSystemWithinLimit(orgId, t => t.aiSystems.insert({ orgId, data, ...summarise(data), createdById: v.id, updatedById: v.id }));
-    if (!row) return { error: limitReached(org.subscription) };
+    if (!row) return { error: limitReached(org.subscription, org.slug) };
     await audit({ orgId, systemId: row.id, userId: v.id, action: 'system.created', detail: { name } });
     dest = `/o/${org.slug}/systems/${row.id}`;
   } catch (e) { return fail(e); }

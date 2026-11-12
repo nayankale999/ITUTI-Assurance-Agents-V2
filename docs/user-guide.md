@@ -46,7 +46,7 @@ You can do the steps yourself, or let the assessment agent draft them from your 
 
 ## Adding an AI system and its profile
 
-1. On the AI inventory, select **Add AI system** and give it a name. Under the page title you can see your subscription and how many systems it allows: the free plan includes up to 2, Standard up to 10 and Enterprise is unlimited. When you reach the limit, the note there links to Ituti to upgrade.
+1. On the AI inventory, select **Add AI system** and give it a name. Under the page title you can see your subscription and how many systems it allows: the free plan includes up to 2, Standard up to 10 and Enterprise is unlimited. When you reach the limit, select **Upgrade your plan**, or open **Plans** in the menu at any time: compare the plans and, as your organisation's admin, request Standard or Enterprise. The Ituti team confirms by email and switches the plan on; your systems stay as they are in the meantime.
 2. Fill in the eleven inventory details: name, business unit or legal entity, managing team, responsible person, what the system does, lifecycle stage, where it is used, sector, business function, your organisation's role (provider, deployer and so on) and type of AI.
 3. Open the **Profile** tab for the rest: where the model comes from, vendor or foundation model, version, data sources, who is affected, data processed, people affected each year, degree of automation and reversibility of a wrong outcome.
 

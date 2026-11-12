@@ -77,6 +77,8 @@ export type Team = { id: string; orgId: string; name: string; leadId: string | n
 export type TeamMember = { teamId: string; userId: string; createdAt: Date };
 export type TeamSystem = { teamId: string; systemId: string; createdAt: Date };
 export type TaskRow = { id: string; orgId: string; systemId: string; teamId: string | null; assigneeId: string; scope: string; status: 'todo' | 'doing' | 'done'; due: string | null; note: string | null; createdById: string | null; createdAt: Date; updatedAt: Date; doneAt: Date | null };
+/** A client's request to move to a larger subscription, decided by an Ituti admin. */
+export type UpgradeRequest = { id: string; orgId: string; fromTier: Subscription; toTier: Subscription; message: string | null; requestedById: string; status: 'pending' | 'approved' | 'declined'; decidedById: string | null; decidedAt: Date | null; createdAt: Date };
 export type A2AContextRow = { id: string; orgId: string; history: { role: 'user' | 'assistant'; text: string }[]; updatedAt: Date };
 
 const def = (name: string, key: string[], columns: Record<string, ColType>): TableDef => ({ name, key, columns });
@@ -132,6 +134,7 @@ export const DEFS = {
   teamMembers: def('team_members', ['teamId', 'userId'], { teamId: 'str', userId: 'str', createdAt: 'date' }),
   teamSystems: def('team_systems', ['teamId', 'systemId'], { teamId: 'str', systemId: 'str', createdAt: 'date' }),
   tasks: def('tasks', ['id'], { id: 'str', orgId: 'str', systemId: 'str', teamId: 'str?', assigneeId: 'str', scope: 'str', status: 'str', due: 'str?', note: 'str?', createdById: 'str?', createdAt: 'date', updatedAt: 'date', doneAt: 'date?' }),
+  upgradeRequests: def('upgrade_requests', ['id'], { id: 'str', orgId: 'str', fromTier: 'str', toTier: 'str', message: 'str?', requestedById: 'str', status: 'str', decidedById: 'str?', decidedAt: 'date?', createdAt: 'date' }),
   proposals: def('proposals', ['id'], {
     id: 'str', runId: 'str', systemId: 'str', path: 'str', label: 'str', value: 'json', previous: 'json?', rationale: 'str', sources: 'json',
     confidence: 'str', status: 'str', decidedById: 'str?', decidedAt: 'date?', createdAt: 'date',
@@ -172,6 +175,7 @@ function makeDb(exec: () => import('mysql2/promise').Pool | PoolConnection, inTx
     teamMembers: t<TeamMember>(DEFS.teamMembers, () => ({ createdAt: now() })),
     teamSystems: t<TeamSystem>(DEFS.teamSystems, () => ({ createdAt: now() })),
     tasks: t<TaskRow>(DEFS.tasks, () => ({ ...withId(), updatedAt: now(), teamId: null, status: 'todo', due: null, note: null, createdById: null, doneAt: null })),
+    upgradeRequests: t<UpgradeRequest>(DEFS.upgradeRequests, () => ({ ...withId(), message: null, status: 'pending', decidedById: null, decidedAt: null })),
     proposals: t<Proposal>(DEFS.proposals, () => ({ ...withId(), previous: null, status: 'pending', decidedById: null, decidedAt: null })),
   };
 }
@@ -229,6 +233,7 @@ export async function deleteOrg(orgId: string) {
     await t.a2aContexts.remove({ orgId });
     await t.spendBudgets.remove({ scope: orgId });
     await t.oauthGrants.remove({ orgId });
+    await t.upgradeRequests.remove({ orgId });
     await t.registrations.update({ orgId }, { orgId: null });
     const teamIds = (await t.teams.find({ orgId })).map(x => x.id);
     if (teamIds.length) { await t.teamMembers.remove({ teamId: teamIds }); await t.teamSystems.remove({ teamId: teamIds }); }

@@ -14,6 +14,7 @@ const ACTIONS: Record<string, string> = {
   'review.run': 'ran an AI evidence review',
   'org.registered': 'signed up', 'share.created': 'created a public model card link', 'share.revoked': 'revoked a public model card link',
   'gap.actions': 'raised gap actions', 'gap.settings': 'changed automatic gap actions', 'team.created': 'created a team', 'team.updated': 'updated a team', 'team.deleted': 'deleted a team', 'task.assigned': 'assigned tasks', 'task.updated': 'updated a task',
+  'org.subscription': 'changed the subscription', 'org.upgrade_requested': 'requested a plan upgrade', 'org.upgrade_approved': 'approved a plan upgrade', 'org.upgrade_declined': 'declined a plan upgrade',
   'proposals.accepted': 'accepted agent proposals', 'proposals.rejected': 'rejected agent proposals', 'agent.completed': 'agent run completed',
 };
 
@@ -32,6 +33,7 @@ export default async function Activity({ params }: { params: Promise<{ slug: str
     if (d.role) bits.push(ROLE_LABEL[String(d.role)] || String(d.role));
     if (Array.isArray(d.sections) && d.sections.length) bits.push(`sections: ${d.sections.join(', ')}`);
     if (d.title) bits.push(String(d.title));
+    if (d.to || d.subscription) bits.push(String(d.to || d.subscription).replace(/^./, c => c.toUpperCase()));
     return bits.join(' · ');
   };
   return (

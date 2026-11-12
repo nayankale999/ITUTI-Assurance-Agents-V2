@@ -27,6 +27,7 @@ export default async function AdminHome() {
   }
   for (const e of by.values()) e.readiness = Math.round(e.readiness / e.systems);
   const stats = [...by.values()];
+  const upgrades = new Map((await db.upgradeRequests.find({ status: 'pending' })).map(r => [r.orgId, r.toTier]));
   const mby = new Map<string, number>();
   for (const m of await db.memberships.find({ orgId: [...ids] })) mby.set(m.orgId, (mby.get(m.orgId) || 0) + 1);
   const totals = stats.reduce((a, s) => ({ systems: a.systems + s.systems, high: a.high + s.high, flagged: a.flagged + s.flagged, incidents: a.incidents + s.incidents }), { systems: 0, high: 0, flagged: 0, incidents: 0 });
@@ -56,7 +57,7 @@ export default async function AdminHome() {
               <tbody>{orgs.map(o => { const s = by.get(o.id); return (
                 <tr key={o.id}>
                   <td><Link href={`/o/${o.slug}`} className="sysname" style={{ textDecoration: 'none', color: 'inherit' }}>{o.name}</Link></td>
-                  <td>{SUBSCRIPTION_LABEL[o.subscription]}{o.signupSource && <small className="muted" style={{ display: 'block' }}>via {o.signupSource}</small>}</td>
+                  <td>{SUBSCRIPTION_LABEL[o.subscription]}{upgrades.get(o.id) && <> <span className="pill t-info" title="Open the client to approve or decline">→ {SUBSCRIPTION_LABEL[upgrades.get(o.id)!]} requested</span></>}{o.signupSource && <small className="muted" style={{ display: 'block' }}>via {o.signupSource}</small>}</td>
                   <td className="num">{(() => { const n = s?.systems ?? 0, lim = systemLimit(o.subscription); return lim != null && n >= lim ? <span className="pill t-warn" title="At the subscription limit">{n} / {lim}</span> : lim != null ? `${n} / ${lim}` : n; })()}</td>
                   <td className="num">{s?.high ?? 0}</td>
                   <td className="num">{s?.flagged ? <span className="pill t-crit">{s.flagged}</span> : 0}</td>

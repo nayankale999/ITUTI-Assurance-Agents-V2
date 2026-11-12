@@ -72,6 +72,12 @@ async function adminConn() {
   return mysql.createConnection({ host: SERVER_URL.hostname, port: Number(SERVER_URL.port || 3306), user: decodeURIComponent(SERVER_URL.username), password: decodeURIComponent(SERVER_URL.password) });
 }
 
+async function assert_rejects(fn: () => Promise<unknown>, name: string) {
+  let threw = false;
+  try { await fn(); } catch { threw = true; }
+  check(name, threw);
+}
+
 async function main() {
   const conn = await adminConn();
   await conn.query(`CREATE DATABASE \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
@@ -705,7 +711,25 @@ async function main() {
         check('a new Free workspace shows its allowance', (await (await get(`/o/${o.slug}`, cookie)).text()).includes('0 of 2 AI systems used'));
         await db.aiSystems.insertMany([1, 2].map(i => ({ orgId: o.id, name: `Signup ${i}`, data: { profile: { name: `Signup ${i}` } } })));
         const page = await (await get(`/o/${o.slug}`, cookie)).text();
-        check('at the limit the add form is replaced by an upgrade link', page.includes('2 of 2 AI systems used') && !page.includes('+ Add AI system') && page.includes('ask Ituti about Standard or Enterprise'));
+        check('at the limit the add form is replaced by an upgrade link', page.includes('2 of 2 AI systems used') && !page.includes('+ Add AI system') && page.includes('Upgrade your plan') && page.includes(`/o/${o.slug}/plans`));
+
+        // Upgrading from Free (React separates text pieces with <!-- --> in the HTML)
+        const html = async (r: Promise<Response>) => (await (await r).text()).replace(/<!-- -->/g, '');
+        const plans = await html(get(`/o/${o.slug}/plans`, cookie));
+        check('the Plans page offers Standard and Enterprise to the client admin', plans.includes('Request Standard') && plans.includes('Request Enterprise') && !plans.includes('Request Free') && plans.includes('2 of 2 AI systems used'));
+        check('a viewer sees the plans but cannot request one', await (async () => { const h = await html(get(`/o/${orgA.slug}/plans`, c.viewer)); return h.includes('Enterprise') && !h.includes('Request ') && h.includes('Only your organisation'); })());
+        const { requestUpgrade, decideUpgrade } = await import('../src/lib/subscription');
+        await assert_rejects(() => requestUpgrade({ orgId: o.id, toTier: 'free', message: null, user: u! }), 'a client cannot request the plan it is already on');
+        await requestUpgrade({ orgId: o.id, toTier: 'standard', message: 'Six models to assess', user: u! });
+        const again = await requestUpgrade({ orgId: o.id, toTier: 'enterprise', message: null, user: u! });
+        check('asking again replaces the earlier request', (await db.upgradeRequests.count({ orgId: o.id, status: 'pending' })) === 1 && (await db.upgradeRequests.first({ orgId: o.id, status: 'pending' }))?.toTier === 'enterprise');
+        check('the inventory and Plans page show the request is waiting', (await html(get(`/o/${o.slug}`, cookie))).includes('Upgrade to Enterprise requested') && (await html(get(`/o/${o.slug}/plans`, cookie))).includes('Upgrade requested'));
+        check('Ituti admins see the request on the Clients list and can approve it on the client page', (await html(get('/admin', c.admin))).includes('Enterprise requested') && (await html(get(`/o/${o.slug}`, c.admin))).includes('Approve: move to Enterprise'));
+        await decideUpgrade({ requestId: again.id, approve: true, adminId: admin.id });
+        const after = await db.organizations.first({ id: o.id });
+        check('approving moves the client to the requested plan', after?.subscription === 'enterprise' && (await db.upgradeRequests.first({ id: again.id }))?.status === 'approved');
+        await assert_rejects(() => decideUpgrade({ requestId: again.id, approve: false, adminId: admin.id }), 'a decided request cannot be decided again');
+        check('after the upgrade the client can add systems again', (await (await get(`/o/${o.slug}`, cookie)).text()).includes('+ Add AI system'));
       }
       check('the sign-up is completed only once', (await db.registrations.find({ email: regEmail })).every(x => x.completedAt && x.orgId === o?.id));
       if (cookie && o) check('the new client admin opens their workspace', (await get(`/o/${o.slug}`, cookie)).status === 200);

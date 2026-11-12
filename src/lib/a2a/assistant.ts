@@ -108,7 +108,7 @@ async function runTool(turn: Turn, name: string, input: Record<string, any>): Pr
       if (input.description) data.profile!.description = String(input.description).slice(0, 5000);
       if (input.business_unit) data.profile!.client = String(input.business_unit).slice(0, 200);
       const row = await insertSystemWithinLimit(org.id, t => t.aiSystems.insert({ orgId: org.id, data, ...summarise(data) }));
-      if (!row) return limitReached(org.subscription);
+      if (!row) return limitReached(org.subscription, org.slug);
       await audit({ orgId: org.id, systemId: row.id, action: 'system.created', detail: { name, via: 'a2a' } });
       return JSON.stringify({ created: true, system_id: row.id, name, link: sysLink(org, row), next: 'Add evidence (paste text or attach documents), then start an assessment.' });
     }

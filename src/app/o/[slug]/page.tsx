@@ -3,8 +3,8 @@ import { db } from '@/data';
 import { orgForPage } from '@/lib/session';
 import { ROLE_LABEL } from '@/lib/permissions';
 import { ActionForm, Submit } from '@/components/ActionForm';
-import { createSystem, renameOrg, setOrgAi, setOrgPlan, setOrgSubscription, createOrgApiKey, revokeOrgApiKey, revokeConnectedApp } from '@/app/actions';
-import { SUBSCRIPTION_LABEL, SUBSCRIPTIONS, limitText, systemLimit } from '@/lib/subscription';
+import { createSystem, renameOrg, setOrgAi, setOrgPlan, setOrgSubscription, decideUpgrade, createOrgApiKey, revokeOrgApiKey, revokeConnectedApp } from '@/app/actions';
+import { SUBSCRIPTION_LABEL, SUBSCRIPTIONS, limitText, systemLimit, pendingUpgrade } from '@/lib/subscription';
 import { connectedApps } from '@/lib/oauth';
 import { PLAN_LABEL, monthUsage, FREE_RERUN_DAYS } from '@/lib/usage';
 import { inventory } from '@/lib/portfolio';
@@ -37,6 +37,7 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
   const roleNote = caps.staff ? null : caps.orgRole ? `You are signed in as ${ROLE_LABEL[caps.orgRole].toLowerCase()}.` : null;
   const limit = systemLimit(org.subscription);
   const full = limit != null && rows.length >= limit;
+  const pending = await pendingUpgrade(org.id);
 
   return (
     <>
@@ -57,7 +58,9 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
       <p className="muted" style={{ fontSize: 13, marginTop: -4 }}>
         <span className="pill t-info">{SUBSCRIPTION_LABEL[org.subscription]}</span>{' '}
         {limit == null ? 'Unlimited AI systems.' : `${rows.length} of ${limit} AI system${limit === 1 ? '' : 's'} used.`}
-        {full && caps.createSystems && <> Your {SUBSCRIPTION_LABEL[org.subscription]} plan includes {limitText(org.subscription)}. To add more, <a href={`mailto:info@itutitech.com?subject=${encodeURIComponent(`Upgrade ${org.name} from the ${SUBSCRIPTION_LABEL[org.subscription]} plan`)}`}>ask Ituti about Standard or Enterprise</a>.</>}
+        {pending ? <> <Link href={`/o/${org.slug}/plans`}>Upgrade to {SUBSCRIPTION_LABEL[pending.toTier]} requested</Link>; Ituti will confirm by email.</>
+          : full && caps.createSystems ? <> Your {SUBSCRIPTION_LABEL[org.subscription]} plan includes {limitText(org.subscription)}. To add more, <Link href={`/o/${org.slug}/plans`} className="btn primary" style={{ padding: '3px 12px', marginLeft: 4 }}>Upgrade your plan</Link></>
+          : caps.manage && org.subscription !== 'enterprise' ? <> <Link href={`/o/${org.slug}/plans`}>Compare plans</Link></> : null}
       </p>
       <ResumeBanner slug={org.slug} systemIds={rows.map(r => r.id)} />
       <section className="stats" aria-label="Inventory summary">
@@ -93,6 +96,7 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
               <Submit className={org.aiEnabled ? 'btn' : 'btn primary'}>{org.aiEnabled ? 'Switch off' : 'Switch on'}</Submit>
             </ActionForm>
           )}
+          {viewer.role === 'ITUTI_ADMIN' && pending && <UpgradeDecision requestId={pending.id} toTier={pending.toTier} message={pending.message} requestedById={pending.requestedById} createdAt={pending.createdAt} from={org.subscription} />}
           {viewer.role === 'ITUTI_ADMIN' && (
             <ActionForm action={setOrgSubscription} className="formrow" style={{ alignItems: 'flex-end' }}>
               <input type="hidden" name="orgId" value={org.id} />
@@ -112,6 +116,21 @@ export default async function Portfolio({ params }: { params: Promise<{ slug: st
 }
 
 import { deleteOrg } from '@/app/actions';
+import type { Subscription } from '@/data';
+
+async function UpgradeDecision({ requestId, toTier, message, requestedById, createdAt, from }: { requestId: string; toTier: Subscription; message: string | null; requestedById: string; createdAt: Date; from: Subscription }) {
+  const who = await db.users.first({ id: requestedById });
+  return (
+    <div className="field" style={{ border: '1px solid var(--violet)', borderRadius: 8, padding: 12, gap: 8 }}>
+      <span><span className="pill t-info">Upgrade requested</span> {who?.name || who?.email} ({who?.email}) asked on {day(createdAt)} to move from {SUBSCRIPTION_LABEL[from]} to <b>{SUBSCRIPTION_LABEL[toTier]}</b> ({limitText(toTier)}).</span>
+      {message && <blockquote style={{ margin: 0, paddingLeft: 10, borderLeft: '3px solid var(--line-strong)' }} className="muted">{message}</blockquote>}
+      <div className="formrow" style={{ gap: 8 }}>
+        <ActionForm action={decideUpgrade}><input type="hidden" name="requestId" value={requestId} /><input type="hidden" name="decision" value="approve" /><Submit className="btn primary">Approve: move to {SUBSCRIPTION_LABEL[toTier]}</Submit></ActionForm>
+        <ActionForm action={decideUpgrade}><input type="hidden" name="requestId" value={requestId} /><input type="hidden" name="decision" value="decline" /><Submit>Decline</Submit></ActionForm>
+      </div>
+    </div>
+  );
+}
 const day = (d: Date | null) => (d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '–');
 
 async function AgentAccess({ orgId, plan, aiEnabled }: { orgId: string; plan: string; aiEnabled: boolean }) {

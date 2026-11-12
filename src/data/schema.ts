@@ -123,6 +123,11 @@ export const MIGRATIONS: [string, string[]][] = [
     `ALTER TABLE organizations ADD COLUMN signupSource VARCHAR(40) NULL`,
     `ALTER TABLE registrations ADD COLUMN source VARCHAR(40) NULL`,
   ]],
+  ['012_upgrade_requests', [
+    `CREATE TABLE IF NOT EXISTS upgrade_requests (id ${ID} PRIMARY KEY, orgId ${ID}, fromTier VARCHAR(16) NOT NULL, toTier VARCHAR(16) NOT NULL,
+      message TEXT NULL, requestedById ${ID}, status VARCHAR(16) NOT NULL, decidedById ${REF}, decidedAt ${AT_NULL}, createdAt ${AT},
+      KEY ix_upg_org (orgId, status), KEY ix_upg_status (status, createdAt)) ${T}`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */
