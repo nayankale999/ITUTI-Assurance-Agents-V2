@@ -190,13 +190,16 @@ async function main() {
     }
     check('the run finishes with a summary', state?.run?.status === 'completed' && /No evidence found/.test(state.run.summary || ''), JSON.stringify(state?.run));
     const paths = (state?.proposals || []).map((x: any) => x.path).sort();
-    check('valid proposals are waiting for review', JSON.stringify(paths) === JSON.stringify(['card.limitations', 'ctrl.TEC-2', 'profile.lifecycle']), paths.join(','));
+    check('valid proposals are waiting for review', JSON.stringify(paths) === JSON.stringify(['card.performance', 'ctrl.TEC-2', 'profile.description', 'profile.lifecycle']), paths.join(','));
     check('an invented quote, an invalid option and model-only control evidence are all refused', !paths.includes('ctrl.GOV-1') && !paths.includes('profile.sector') && !paths.includes('ctrl.DAT-1'));
+    check('outside research is refused as a source', !paths.includes('card.limitations') && state.run.log.some((l: any) => /Rejected card\.limitations: Only the client's documents and the assessment record count as sources/.test(l.text)));
+    check('the grounding judge sends back a claim the quotes do not support', !paths.includes('ctrl.MON-1') && state.run.log.some((l: any) => /Rejected ctrl\.MON-1: the grounding judge/.test(l.text)));
+    check('no outside research is done', !(await db.models.first({ mkey: 'example-ai/example-model-1' })) && !(state.run.log || []).some((l: any) => /Looked up/.test(l.text)));
     {
       const runRow = await db.agentRuns.first({ id: state?.run?.id });
       const u = runRow?.usage_detail || {};
-      check('each specialist has its own meter', ['reader', 'classify', 'controls', 'docs', 'conformity', 'checker'].every(k => u[k]) && u.controls.calls >= 2 && u.controls.costUsd > 0 && u.checker.tools >= 4 && u.checker.calls === 0, JSON.stringify(u).slice(0, 400));
-      check('proposals are counted against the specialist that made them', u.controls.proposals === 1 && u.classify.proposals === 1 && u.docs.proposals === 1);
+      check('each specialist has its own meter', ['reader', 'classify', 'controls', 'docs', 'conformity', 'checker'].every(k => u[k]) && u.controls.calls >= 2 && u.controls.costUsd > 0 && u.checker.tools >= 6 && u.checker.calls >= 4, JSON.stringify(u).slice(0, 400));
+      check('proposals are counted against the specialist that made them', u.controls.proposals === 1 && u.classify.proposals === 2 && u.docs.proposals === 1);
       check('the run totals add up the specialists', runRow!.outputTokens === Object.values(u).reduce((a: number, x: any) => a + x.output, 0));
       check('a specialist cannot propose outside its fields', state.run.log.some((l: any) => /Rejected ctrl\.GOV-3: outside your fields; the controls assessor/.test(l.text)));
       check('the run is shown as a crew with costs', state.run.usage?.controls?.costUsd > 0);
@@ -208,9 +211,10 @@ async function main() {
     }
     const tec = state?.proposals?.find((x: any) => x.path === 'ctrl.TEC-2');
     check('a proposal cites the document and the page section', tec?.sources?.[0]?.ref === docId && /^section/.test(tec?.sources?.[0]?.locator || ''));
-    const lim = state?.proposals?.find((x: any) => x.path === 'card.limitations');
-    check('a model-card proposal cites the provider page', lim?.sources?.some((x: any) => x.kind === 'web' && x.url === 'https://huggingface.co/example/model'));
-    check('the researched model is kept in the shared library', (await db.models.first({ mkey: 'example-ai/example-model-1' }))?.status === 'ready');
+    const lim = state?.proposals?.find((x: any) => x.path === 'card.performance');
+    check('a model-card proposal cites the client document', lim?.sources?.every((x: any) => x.kind === 'document' && x.ref === docId));
+    const desc = state?.proposals?.find((x: any) => x.path === 'profile.description');
+    check('an answer people entered can be quoted as a source', desc?.sources?.some((x: any) => x.kind === 'system' && x.ref === 'profile.name') && desc?.sources?.some((x: any) => x.kind === 'document'));
     const ver = (await db.aiSystems.first({ id: s1.id }))!.version;
     check('viewer cannot accept proposals', (await send(`/api/systems/${s1.id}/proposals`, 'POST', c.viewer, { action: 'accept', ids: [tec?.id], version: ver })).status === 403);
     check('accepting on a stale version is refused', (await send(`/api/systems/${s1.id}/proposals`, 'POST', c.contrib, { action: 'accept', ids: [tec?.id], version: ver - 1 })).status === 409);
@@ -218,9 +222,9 @@ async function main() {
     const accBody = await acc.json();
     check('accepting writes the value with its provenance', acc.status === 200 && accBody.data?.ctrl?.['TEC-2']?.s === 'met' && accBody.data?.prov?.['ctrl.TEC-2']?.p === tec?.id && accBody.version === ver + 1);
     const edit = await send(`/api/systems/${s1.id}/proposals`, 'POST', c.contrib, { action: 'accept', ids: [lim?.id], version: accBody.version, value: 'Edited by the reviewer: not for final credit decisions.' });
-    check('an edited proposal is accepted with the edited text', edit.status === 200 && (await edit.json()).data?.card?.limitations?.startsWith('Edited by the reviewer'));
+    check('an edited proposal is accepted with the edited text', edit.status === 200 && (await edit.json()).data?.card?.performance?.startsWith('Edited by the reviewer'));
     const lc = state?.proposals?.find((x: any) => x.path === 'profile.lifecycle');
-    const rej = await send(`/api/systems/${s1.id}/proposals`, 'POST', c.contrib, { action: 'reject', ids: [lc?.id], version: accBody.version + 1 });
+    const rej = await send(`/api/systems/${s1.id}/proposals`, 'POST', c.contrib, { action: 'reject', ids: [lc?.id, desc?.id], version: accBody.version + 1 });
     check('rejecting leaves the assessment unchanged', rej.status === 200 && (await db.aiSystems.first({ id: s1.id }))?.data.profile?.lifecycle === undefined);
     check('nothing is left to review', ((await (await get(`/api/systems/${s1.id}/agent`, c.contrib)).json()).proposals || []).length === 0);
     const rep = await (await get(`/o/${orgA.slug}/systems/${s1.id}/report`, c.viewer)).text();
@@ -289,7 +293,7 @@ async function main() {
     // ---------- The specialists as separate A2A agents ----------
     {
       const list = await (await get('/api/a2a/agents')).json();
-      check('the crew is listed with an address per specialist', list.specialists?.length === 7 && list.specialists.every((x: any) => x.url.startsWith(`${BASE}/api/a2a/agents/`)));
+      check('the crew is listed with an address per specialist', list.specialists?.length === 6 && list.specialists.every((x: any) => x.url.startsWith(`${BASE}/api/a2a/agents/`)));
       const spCard = await (await get('/api/a2a/agents/controls-assessor/.well-known/agent-card.json')).json();
       check('each specialist publishes its own agent card', spCard.protocolVersion === '0.3.0' && spCard.name === 'Ituti AI Assurance: Controls assessor' && spCard.url === `${BASE}/api/a2a/agents/controls-assessor` && spCard.skills?.length === 1);
       check('an unknown specialist is not found', (await get('/api/a2a/agents/nobody')).status === 404);
@@ -305,7 +309,8 @@ async function main() {
       check('the source checker confirms a real quote and where it is', okQ.reply.includes('"found":true') && okQ.reply.includes('fraud-validation.md'), okQ.reply.slice(0, 200));
       const badQ = await spSay('source-checker', 'verify «The board approved the AI policy on 1 January 2019» in "Fraud model"');
       check('the source checker rejects an invented quote', badQ.reply.includes('"found":false'));
-      check('the model researcher looks up a model', (await spSay('model-researcher', 'look up Example Model 1')).reply.includes('huggingface.co/example/model'));
+      check('outside research is switched off for the model researcher', (await spSay('model-researcher', 'look up Example Model 1')).reply.includes('External research is switched off'));
+      check('the published crew leaves out the model researcher', !JSON.stringify(await (await get('/api/a2a/agents')).json()).includes('model-researcher'));
       check('the specialists only see this client\'s systems', (await spSay('evidence-reader', 'search "Secret claims model"')).reply.includes('No system matches'));
       const runsBefore = await db.agentRuns.count({ systemId: fraud.id });
       const sp = await spSay('controls-assessor', 'start on "Fraud model"');
@@ -339,7 +344,8 @@ async function main() {
       check('the MCP server refuses calls from another site', (await raw({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { authorization: `Bearer ${keyA}`, origin: 'https://evil.example' })).status === 403);
       const mcp = await connect(keyA);
       const tools = (await mcp.listTools()).tools.map((t: any) => t.name);
-      check('the MCP server lists the assurance tools', ['list_systems', 'get_system', 'register_system', 'add_evidence', 'search_evidence', 'read_evidence', 'verify_quote', 'lookup_model', 'start_assessment', 'assessment_status', 'list_proposals', 'get_gaps', 'list_incidents', 'report_incident', 'get_ai_spend'].every(n => tools.includes(n)), tools.join(','));
+      check('the MCP server lists the assurance tools', ['list_systems', 'get_system', 'register_system', 'add_evidence', 'search_evidence', 'read_evidence', 'verify_quote', 'start_assessment', 'assessment_status', 'list_proposals', 'get_gaps', 'list_incidents', 'report_incident', 'get_ai_spend'].every(n => tools.includes(n)), tools.join(','));
+      check('the MCP server has no outside-research tool', !tools.includes('lookup_model'));
       check('the MCP server offers prompts', (await mcp.listPrompts()).prompts.some((p: any) => p.name === 'assess_ai_system'));
       const ls = await call(mcp, 'list_systems');
       check('MCP lists only this client\'s systems', /fraud model/i.test(ls.text) && !ls.text.includes('Secret claims model'), ls.text.slice(0, 300));
@@ -458,7 +464,7 @@ async function main() {
     {
       const spend = await db.aiSpend.find({});
       const agents = new Set(spend.map(x => x.agent));
-      check('every Claude call is recorded in the spend ledger', spend.length > 10 && ['reader', 'classify', 'controls', 'docs', 'conformity', 'assistant', 'research'].every(a => agents.has(a)), [...agents].join(','));
+      check('every Claude call is recorded in the spend ledger', spend.length > 10 && ['reader', 'classify', 'controls', 'docs', 'conformity', 'checker', 'assistant'].every(a => agents.has(a)), [...agents].join(','));
       check('calls are attributed to the client, system and run', spend.filter(x => x.source === 'run').every(x => x.orgId === orgA.id && !!x.systemId && !!x.runId) && spend.some(x => x.source === 'a2a' && x.agent === 'controls' && x.orgId === orgA.id));
       check('each call is priced', spend.filter(x => x.model.startsWith('claude-opus')).every(x => x.costMicros > 0));
       const { spendReport, spendBlocked } = await import('../src/lib/spend');

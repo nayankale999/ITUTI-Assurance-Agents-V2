@@ -17,7 +17,7 @@ import { aiBlocked } from '../agent/access';
 import { startRun, findQuote } from '../agent/runner';
 import { getModel, modelKey } from '../agent/models';
 import { SECTION_LABEL, displayValue } from '../agent/fields';
-import { WRITERS, crewName, type SpecialistKey } from '../agent/specialists';
+import { WRITERS, crewName, externalResearchOn, type SpecialistKey } from '../agent/specialists';
 import { planFor } from '../plan';
 import { refreshIncidentCount } from '../api';
 import { INCIDENT_CATEGORIES } from '../incidents';
@@ -199,7 +199,7 @@ export function buildServer(ctx: Ctx) {
     return text(hit ? { found: true, document: hit.doc.name, location: hit.locator } : { found: false, note: 'Not found word for word in the evidence. Paraphrases are not accepted as sources.' });
   });
 
-  server.registerTool('lookup_model', {
+  if (externalResearchOn()) server.registerTool('lookup_model', {
     title: 'Look up a foundation model',
     description: 'What a provider publishes about a foundation model (model card, limitations, training data, usage policy, data handling, EU AI Act status), from official sources, with links. Researching a model not yet in the library takes a minute and uses AI.',
     inputSchema: { provider: z.string().min(1).max(100), model: z.string().min(1).max(200) }, annotations: { readOnlyHint: true, openWorldHint: true },

@@ -16,6 +16,7 @@ import { tracingOn } from '@/lib/telemetry';
 import { orchestrateIds } from '@/lib/agent/specialists';
 import { agentModel } from '@/lib/agent/llm';
 import { budgets, money } from '@/lib/spend';
+import { externalResearchOn, groundingJudgeOn } from '@/lib/agent/grounding';
 
 export const metadata = { title: 'System' };
 export const dynamic = 'force-dynamic';
@@ -47,6 +48,7 @@ export default async function SystemPage() {
     ['Document storage', <><span className="mono">{dir}</span>{disk ? <> · {gb(disk.free)} free of {gb(disk.total)}</> : null} · {Number(docs?.n || 0)} documents, {gb(Number(docs?.size || 0))}{disk && disk.free < 5 * 1024 ** 3 ? <> <Ok ok={false}>Low on space</Ok></> : null}</>],
     ['Email', smtp ? <><Ok ok>Configured</Ok> <span className="mono">{process.env.SMTP_HOST}:{process.env.SMTP_PORT || 587}</span></> : <><Ok ok={false}>No mail server</Ok> Sign-in links are not emailed; issue them below.</>],
     ['AI (Claude)', ai ? <><Ok ok>Configured</Ok> agent model <span className="mono">{agentModel()}</span>{process.env.ANTHROPIC_BASE_URL ? <> · through gateway <span className="mono">{process.env.ANTHROPIC_BASE_URL}</span></> : ' · direct to Anthropic'}{proxy ? ' · via outbound proxy' : ''}</> : <Ok ok={false}>Not configured: assessments, agents and reviews are off</Ok>],
+    ['Grounding', <>{externalResearchOn() ? <Ok ok={false}>Outside research on</Ok> : <Ok ok>Client evidence only</Ok>} Every source is checked word for word against the documents or recorded answers{groundingJudgeOn() ? '; the grounding judge sends back unsupported statements' : <> · <Ok ok={false}>Grounding judge off</Ok></>}</>],
     ['Cost estimates', process.env.ANTHROPIC_PRICES ? 'Custom prices (ANTHROPIC_PRICES)' : 'Anthropic list prices'],
     ['AI budget', g ? <>{money(g.spent)} of {money(g.limit)} this month{g.hardStop ? ', hard stop' : ''} · <Link href="/admin/spend">Spend</Link></> : <>No overall budget · <Link href="/admin/spend">Set one</Link></>],
     ['MCP server', <><span className="mono">{process.env.NEXTAUTH_URL || ''}/api/mcp</span> · OAuth sign-in or client API key</>],

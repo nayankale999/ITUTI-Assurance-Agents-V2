@@ -10,7 +10,7 @@ import { PLAN_LABEL, monthUsage, FREE_RERUN_DAYS } from '@/lib/usage';
 import { inventory } from '@/lib/portfolio';
 import { InventoryTable } from '@/components/InventoryTable';
 import { ResumeBanner } from '@/components/ResumeBanner';
-import { SPECIALISTS, COORDINATOR, crewName, orchestrateIds } from '@/lib/agent/specialists';
+import { activeSpecialists, COORDINATOR, crewName, orchestrateIds } from '@/lib/agent/specialists';
 import { crewUsage, tokens } from '@/lib/finops';
 import { usd } from '@/lib/agent/pricing';
 import { tracingOn } from '@/lib/telemetry';
@@ -153,12 +153,12 @@ async function AgentAccess({ orgId, plan, aiEnabled }: { orgId: string; plan: st
       <p className="muted">This month: <b>{use.total}</b> assessment{use.total === 1 ? '' : 's'} ({use.billable} billable, {use.viaAgent} through the agent endpoint). An assessment is counted when a pre-fill run completes; re-runs on the same system within {FREE_RERUN_DAYS} days are included.</p>
       <p className="muted">MCP server: <span className="mono">{base}/api/mcp</span> (OAuth sign-in, or this client&rsquo;s API key as a bearer token) · A2A agent card: <span className="mono">{base}/.well-known/agent-card.json</span> · endpoint: <span className="mono">{base}/api/a2a</span>{!aiEnabled && <> · <b>switch AI assistance on above, or the agent will refuse to run assessments</b></>}</p>
       <details className="crew-agents">
-        <summary>Register the assessment crew as separate agents ({SPECIALISTS.length + 1} addresses)</summary>
+        <summary>Register the assessment crew as separate agents ({activeSpecialists().length + 1} addresses)</summary>
         <p className="muted">In watsonx Orchestrate, add each as an external A2A agent (protocol 0.3.0) with this client&rsquo;s API key as the bearer token. Each specialist then has its own Agent ID, runs, latency and token use. {tracingOn() ? 'Traces are being sent to Orchestrate.' : 'To send traces, set the ORCHESTRATE_* settings on the server (see the README).'}</p>
         <table className="ledger"><thead><tr><th>Agent</th><th>Address to register</th><th>Orchestrate ID</th></tr></thead>
           <tbody>
             <tr><td><b>Ituti AI Assurance</b><small className="muted" style={{ display: 'block' }}>Main agent: portfolio, registration, full assessments</small></td><td className="mono" style={{ fontSize: 12 }}>{base}/api/a2a</td><td className="muted mono" style={{ fontSize: 12 }}>{ids.coordinator ? `${ids.coordinator.slice(0, 8)}… (coordinator)` : '–'}</td></tr>
-            {SPECIALISTS.map(s => <tr key={s.key}><td><b>{s.name}</b><small className="muted" style={{ display: 'block' }}>{s.role}</small></td><td className="mono" style={{ fontSize: 12 }}>{base}/api/a2a/agents/{s.slug}</td><td className="muted mono" style={{ fontSize: 12 }}>{ids[s.key] ? `${ids[s.key].slice(0, 8)}…` : '–'}</td></tr>)}
+            {activeSpecialists().map(s => <tr key={s.key}><td><b>{s.name}</b><small className="muted" style={{ display: 'block' }}>{s.role}</small></td><td className="mono" style={{ fontSize: 12 }}>{base}/api/a2a/agents/{s.slug}</td><td className="muted mono" style={{ fontSize: 12 }}>{ids[s.key] ? `${ids[s.key].slice(0, 8)}…` : '–'}</td></tr>)}
           </tbody></table>
       </details>
       <h4 style={{ marginTop: 18 }}>Model use this month, by agent</h4>

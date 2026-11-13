@@ -94,6 +94,13 @@ ANTHROPIC_MODEL_READER=
 # Optional: your negotiated prices, JSON in US dollars per million tokens.
 # Example: {"claude-opus-5-5":{"input":4,"output":20,"cacheWrite":5,"cacheRead":0.2}}
 ANTHROPIC_PRICES=
+# Grounding. The agents use only the evidence documents uploaded for each AI system and the answers people have
+# entered: no web research and no outside facts. Every proposal is checked word for word against its sources, and a
+# grounding judge (one short call to ANTHROPIC_MODEL) sends back any statement the quotes do not support.
+# AGENT_EXTERNAL_RESEARCH=true lets the model researcher look up what foundation-model providers publish (not
+# recommended where only client evidence may be used). AGENT_GROUNDING_JUDGE=false turns the judge off.
+AGENT_EXTERNAL_RESEARCH=false
+AGENT_GROUNDING_JUDGE=true
 # Optional: outbound proxy for calls to Anthropic, and hosts that must bypass it.
 HTTPS_PROXY=
 NO_PROXY=localhost,127.0.0.1

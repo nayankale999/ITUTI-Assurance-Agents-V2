@@ -32,6 +32,11 @@ export function fakeClient() {
             { type: 'text', text: '\n### trainingData\nNot published.' },
           ], 'end_turn');
         }
+        // The grounding judge: rejects the one drift-monitoring claim the validation report does not support
+        if (typeof p.system === 'string' && p.system.startsWith('ITUTI_GROUNDING_JUDGE')) {
+          const text = String(p.messages[0].content);
+          return msg([{ type: 'text', text: /drift monitoring/i.test(text) ? '{"supported": false, "unsupported": "Daily drift monitoring is not mentioned in the quotes."}' : '{"supported": true}' }], 'end_turn');
+        }
         // The A2A assistant: one tool call chosen from the latest user text, then a reply quoting the result
         if (typeof p.system === 'string' && p.system.startsWith('ITUTI_A2A_ASSISTANT')) {
           const last = p.messages[p.messages.length - 1];
@@ -72,7 +77,7 @@ export function fakeClient() {
         const firstHit = (raw: string) => {
           const hits = JSON.parse(raw || '[]') as { document_id: string; text: string }[];
           const h = hits.find(x => /validation/i.test(x.text)) || hits[0];
-          return { id: h?.document_id, sentence: (h?.text.match(/[^.\n]*validation[^.\n]*\./i)?.[0] || h?.text.slice(0, 120) || '').trim() };
+          return { id: h?.document_id, sentence: (h?.text.match(/[^.\n]*validation[^.\n]*\./i)?.[0] || h?.text.slice(0, 120) || '').trim(), production: (h?.text.match(/[^.\n]*in production[^.\n]*\./i)?.[0] || '').trim(), gini: (h?.text.match(/Gini[^.\n]*\.\d+[^.\n]*\.\d+\./)?.[0] || '').trim() };
         };
         if (who === 'reader') {
           if (step === 0) return msg([call('list_documents', {})]);
@@ -86,6 +91,7 @@ export function fakeClient() {
             const h = firstHit(results[0]);
             return msg([
               call('propose', { path: 'profile.lifecycle', value: 'prod', confidence: 'medium', rationale: 'The report describes the model in production.', sources: [{ type: 'document', document_id: h.id, quote: h.sentence }] }),
+              call('propose', { path: 'profile.description', value: 'Loan scoring: scores retail loan applications; in production since March 2026.', confidence: 'high', rationale: 'Name from the record, purpose from the validation report.', sources: [{ type: 'record', path: 'profile.name', quote: 'Loan scoring' }, { type: 'document', document_id: h.id, quote: h.production }] }),
               call('propose', { path: 'profile.sector', value: 'spaceships', confidence: 'high', rationale: 'Invalid option: must be rejected.', sources: [{ type: 'document', document_id: h.id, quote: h.sentence }] }),
               call('propose', { path: 'ctrl.GOV-3', value: { s: 'met', e: 'Out of remit.' }, confidence: 'high', rationale: 'Belongs to the controls assessor: must be rejected.', sources: [{ type: 'document', document_id: h.id, quote: h.sentence }] }),
             ]);
@@ -101,17 +107,21 @@ export function fakeClient() {
               call('propose', { path: 'ctrl.TEC-2', value: { s: 'met', e: `Independent second-line validation documented in the validation report: ${h.sentence}` }, confidence: 'high', rationale: 'The report records an independent validation.', sources: [{ type: 'document', document_id: h.id, quote: h.sentence }] }),
               call('propose', { path: 'ctrl.GOV-1', value: { s: 'met', e: 'Board approved AI policy in 2019 according to the minutes.' }, confidence: 'high', rationale: 'Invented quote: must be rejected.', sources: [{ type: 'document', document_id: h.id, quote: 'The board approved the AI policy on 1 January 2019.' }] }),
               call('propose', { path: 'ctrl.DAT-1', value: { s: 'met', e: 'Provider documentation describes training data.' }, confidence: 'low', rationale: 'Model sources cannot prove client controls: must be rejected.', sources: [{ type: 'model', model_key: 'example-ai/example-model-1', section: 'limitations' }] }),
+              call('propose', { path: 'ctrl.MON-1', value: { s: 'met', e: 'Drift monitoring runs daily and alerts the model owner.' }, confidence: 'medium', rationale: 'Claim the quote does not support: the grounding judge must reject it.', sources: [{ type: 'document', document_id: h.id, quote: h.sentence }] }),
             ]);
           }
           return msg([call('finish', { summary: 'Validation evidenced (TEC-2). No evidence found for the AI policy (GOV-1) or data documentation (DAT-1).' })]);
         }
         if (who === 'docs') {
-          if (step === 0) return msg([call('lookup_model', { provider: 'Example AI', model: 'Example Model 1' })]);
+          if (step === 0) return msg([call('search_documents', { query: 'Gini threshold' })]);
           if (step === 1) {
-            const r = JSON.parse(results[0] || '{}') as { model_key?: string };
-            return msg([call('propose', { path: 'card.limitations', value: 'The underlying model can produce incorrect statements and should not be relied on for final credit decisions.', confidence: 'high', rationale: 'Stated in the provider model card.', sources: [{ type: 'model', model_key: r.model_key, section: 'limitations' }] })]);
+            const h = firstHit(results[0]);
+            return msg([
+              call('propose', { path: 'card.performance', value: 'Gini of 0.61 on the out-of-time sample, against an acceptance threshold of 0.55.', confidence: 'high', rationale: 'Stated in the validation report.', sources: [{ type: 'document', document_id: h.id, quote: h.gini }] }),
+              call('propose', { path: 'card.limitations', value: 'The underlying model can produce incorrect statements.', confidence: 'high', rationale: 'Outside research: must be rejected.', sources: [{ type: 'model', model_key: 'example-ai/example-model-1', section: 'limitations' }] }),
+            ]);
           }
-          return msg([call('finish', { summary: 'Model card limitations from the provider.' })]);
+          return msg([call('finish', { summary: 'Model card performance from the validation report. Limitations are not documented.' })]);
         }
         if (who === 'conformity') return msg([call('finish', { summary: 'No conformity answers beyond what is pre-filled.' })]);
         void docId;

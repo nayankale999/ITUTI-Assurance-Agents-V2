@@ -11,7 +11,8 @@ import { llm } from '../agent/llm';
 import { aiBlocked } from '../agent/access';
 import { startRun, findQuote } from '../agent/runner';
 import { getModel } from '../agent/models';
-import { SPECIALISTS, specialist, crewName, inRemit, type Specialist } from '../agent/specialists';
+import { SPECIALISTS, specialist, crewName, inRemit, externalResearchOn, type Specialist } from '../agent/specialists';
+import { RESEARCH_OFF } from '../agent/grounding';
 import { displayValue } from '../agent/fields';
 import { tokensOf, costOf } from '../agent/pricing';
 import { searchDocuments, readDocument } from '../documents';
@@ -95,6 +96,7 @@ async function runTool(org: Org, sp: Specialist, name: string, input: Record<str
       return doc ? JSON.stringify({ document: doc.doc.name, sections: doc.chunks.map(c => ({ section: c.seq, locator: c.locator, text: c.text })), next_section: doc.next }) : 'Unknown document_id.';
     }
     case 'lookup_model': {
+      if (!externalResearchOn()) return RESEARCH_OFF;
       const provider = String(input.provider || '').slice(0, 100), m = String(input.model || '').slice(0, 200);
       if (!provider || !m) return 'Give both provider and model.';
       const row = await getModel(provider, m);

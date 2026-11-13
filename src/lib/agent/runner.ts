@@ -1,8 +1,10 @@
-/* The assessment crew. A coordinator hands the work to specialist agents in turn: the model researcher looks up
- * the foundation models named in the profile, the evidence reader maps the client's documents, and four writers
- * (risk classifier, controls assessor, documentation writer, conformity writer) propose values for their own
- * fields. The source checker verifies every quote before a proposal is stored. Proposals are only suggestions:
- * nothing changes the assessment until a person accepts it.
+/* The assessment crew. A coordinator hands the work to specialist agents in turn: the evidence reader maps the
+ * client's documents, and four writers (risk classifier, controls assessor, documentation writer, conformity writer)
+ * propose values for their own fields. The crew is grounded in what the client provided (see grounding.ts): the
+ * source checker verifies every quote against the documents or the assessment record, and the grounding judge
+ * sends back any statement the quotes do not support, before a proposal is stored. Proposals are only suggestions:
+ * nothing changes the assessment until a person accepts it. The model researcher (outside research) only joins
+ * when an administrator switches on AGENT_EXTERNAL_RESEARCH.
  * Each specialist has its own instructions, tools, turn limit, model and meter (tokens, estimated cost, time), and
  * its own trace in IBM watsonx Orchestrate when tracing is configured. */
 import type Anthropic from '@anthropic-ai/sdk';
@@ -19,15 +21,17 @@ import { detectModels } from './detect';
 import { SPECIALISTS, WRITERS, specialist, inRemit, modelFor, crewName, type Specialist, type SpecialistKey, type CrewKey } from './specialists';
 import { tokensOf, costOf, emptyUsage } from './pricing';
 import { withSpend } from '../spend';
+import { GROUNDING_RULES, externalResearchOn, judge } from './grounding';
 
 const MAX_PROPOSALS = 220;
 const MAX_MS = 30 * 60e3;
 export const STALE_MS = 4 * 60e3; // a run with no heartbeat for this long is treated as failed
 
-const RULES = `Rules:
-- Only propose what a source supports. Every proposal needs at least one source. A document source needs an exact quote copied from the text you read (15 to 300 characters); the source checker rejects quotes it cannot find.
-- Use lookup_model sources only for facts about the model itself (vendor, version, training data, limitations, provider evaluations). They never show that the client's own controls are in place.
-- Do not propose for a field that already has a value unless the documents clearly contradict or materially complete it; say why in the rationale.
+const RESEARCH_RULE = '- Model library sources (only when lookup_model is in your tools) are for facts about the model itself (vendor, version, training data, limitations, provider evaluations). They never show that the client\'s own controls are in place.\n';
+const RULES = () => `${GROUNDING_RULES}
+
+Rules:
+${externalResearchOn() ? RESEARCH_RULE : ''}- Do not propose for a field that already has a value unless the documents clearly contradict or materially complete it; say why in the rationale.
 - Confidence: "high" when a source states it directly; "medium" when it follows from a source with little interpretation; "low" otherwise.
 - Keep rationales under 60 words. Write in plain British English.
 - Propose only the fields in your list. Other specialists handle the rest.
@@ -59,7 +63,7 @@ How to work:
 
 Classification matters legally: propose prohibited-practice screens and high-risk areas only from clear descriptions of the system's purpose and use, explain the reasoning briefly, and use confidence "medium" or "low" when interpretation is involved.
 
-${RULES}`,
+${RULES()}`,
 
   controls: `${INTRO('Controls assessor', 'rate each applicable control (ctrl.*) from the client\'s own documents.')}
 
@@ -70,26 +74,26 @@ How to work:
 
 For controls, "met" needs specific evidence of the control working (a named document, owner, date or result); use "partial" when evidence exists but is incomplete, and "gap" only when a document shows the control is missing. Write the evidence note "e" as a reviewer would: what the evidence is, where it is (document and section), who owns it and when, and what is missing. A control can only be "met" or "partial" on the strength of the client's own documents.
 
-${RULES}`,
+${RULES()}`,
 
   docs: `${INTRO('Documentation writer', 'write the model card (card.*) and record monitoring metrics (metric.<name>).')}
 
 How to work:
-1. Use the model library entries you were given and the evidence map. Search and read for model details, performance results and monitoring arrangements.
-2. Always propose every model card field you have a source for. When a vendor or foundation model is used, propose card.model (provider, model, version, how it is accessed), card.data (what the provider discloses about training data, plus any client data used), card.limitations (the provider's stated limitations alongside any found in testing) and, where relevant, card.outOfScope (the provider's usage restrictions) from the model library, even when no client documents were uploaded. Combine model and document sources in one proposal where both apply. If the documents name a more specific model or version than the library entry, call lookup_model for it.
+1. Start from the evidence map and the system profile. Search and read for model details, data, performance and fairness results, limitations, oversight and monitoring arrangements.
+2. Propose every model card field the documents or the assessment record support: card.model (provider, model, version, how it is accessed), card.data, card.performance, card.fairness, card.limitations, card.outOfScope, card.oversight and the rest. Write only what the sources say; where the client's documents say nothing about, for example, the provider's training data, leave it out and name it as missing in your summary.
 3. Propose monitoring metrics the documents record (with thresholds and readings).
 4. Call finish with a short summary.
 
-${RULES}`,
+${RULES()}`,
 
   conformity: `${INTRO('Conformity writer', 'answer the conformity assessment questions (conf.*) for EU AI Act Article 43 and Annex VI.')}
 
 How to work:
 1. Start from the evidence map and the work of the specialists before you. Search and read where you need more.
-2. Answer each question in plain prose a reviewer can sign off, up to about 2,000 characters: what is in place, the documents, owners and dates, and what is missing. Base answers on the client's documents (and the model library for T1, T2 and model limitations). Fields already answered elsewhere in the record are pre-filled for the reviewer automatically, so propose an answer only when the documents add substance. Skip T11 unless the system is generative or agentic.
+2. Answer each question in plain prose a reviewer can sign off, up to about 2,000 characters: what is in place, the documents, owners and dates, and what is missing. Base answers only on the client's documents and the assessment record; where they say nothing, propose nothing and list the gap in your summary. Fields already answered elsewhere in the record are pre-filled for the reviewer automatically, so propose an answer only when the documents add substance. Skip T11 unless the system is generative or agentic.
 3. Call finish with a short summary.
 
-${RULES}`,
+${RULES()}`,
 };
 
 const T_LIST: Anthropic.Tool = { name: 'list_documents', description: "List the client's uploaded evidence documents for this AI system.", input_schema: { type: 'object', properties: {} } };
@@ -105,7 +109,7 @@ const T_LOOKUP: Anthropic.Tool = {
   name: 'lookup_model', description: 'Ask the model researcher what a foundation-model provider publishes about a model (model or system card, usage policy, data handling, EU AI Act status), researched from official sources. Can take a minute the first time.',
   input_schema: { type: 'object', properties: { provider: { type: 'string', description: 'For example Anthropic, OpenAI, Google, Meta, Mistral, IBM' }, model: { type: 'string', description: 'For example "Claude Sonnet 5.5" or "GPT-5"' } }, required: ['provider', 'model'] },
 };
-const T_PROPOSE: Anthropic.Tool = {
+const T_PROPOSE = (): Anthropic.Tool => ({
   name: 'propose', description: 'Propose a value for one of your fields. The source checker verifies the sources, and a person reviews the proposal before it is used.',
   input_schema: {
     type: 'object',
@@ -119,9 +123,10 @@ const T_PROPOSE: Anthropic.Tool = {
         items: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['document', 'model'] },
-            document_id: { type: 'string' },
-            quote: { type: 'string', description: 'Exact text copied from the document' },
+            type: { type: 'string', enum: externalResearchOn() ? ['document', 'record', 'model'] : ['document', 'record'] },
+            document_id: { type: 'string', description: 'For a document source' },
+            path: { type: 'string', description: 'For a record source: the answer quoted, for example "profile.description"' },
+            quote: { type: 'string', description: 'Exact text copied from the document or the recorded answer' },
             model_key: { type: 'string', description: 'From lookup_model' },
             section: { type: 'string', description: 'Section key from lookup_model, for example "limitations"' },
           },
@@ -131,13 +136,13 @@ const T_PROPOSE: Anthropic.Tool = {
     },
     required: ['path', 'value', 'confidence', 'rationale', 'sources'],
   },
-};
+});
 const T_FINISH = (what: string): Anthropic.Tool => ({ name: 'finish', description: `End your part of the run with ${what}.`, input_schema: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] } });
 
 const toolsFor = (k: SpecialistKey): Anthropic.Tool[] => k === 'reader'
   ? [T_LIST, T_SEARCH, T_READ, T_FINISH('the evidence map')]
-  : k === 'controls' ? [T_LIST, T_SEARCH, T_READ, T_PROPOSE, T_FINISH('a short summary for the assessor')]
-  : [T_LIST, T_SEARCH, T_READ, T_LOOKUP, T_PROPOSE, T_FINISH('a short summary for the assessor')];
+  : k === 'controls' || !externalResearchOn() ? [T_LIST, T_SEARCH, T_READ, T_PROPOSE(), T_FINISH('a short summary for the assessor')]
+  : [T_LIST, T_SEARCH, T_READ, T_LOOKUP, T_PROPOSE(), T_FINISH('a short summary for the assessor')];
 
 /* ---------- Metering ---------- */
 
@@ -202,6 +207,7 @@ async function verifySources(ctx: Ctx, raw: unknown): Promise<{ ok: true; source
 async function checkSources(ctx: Ctx, raw: unknown): Promise<{ ok: true; sources: Source[] } | { ok: false; error: string }> {
   if (!Array.isArray(raw) || !raw.length) return { ok: false, error: 'At least one source is needed.' };
   const out: Source[] = [];
+  let record: AssessmentData | null = null;
   for (const s of raw.slice(0, 6) as Record<string, string>[]) {
     if (s.type === 'document') {
       const doc = await db.documents.first({ id: String(s.document_id || ''), systemId: ctx.systemId });
@@ -211,7 +217,18 @@ async function checkSources(ctx: Ctx, raw: unknown): Promise<{ ok: true; sources
       const hit = await findQuote(ctx.systemId, doc.id, quote);
       if (!hit) return { ok: false, error: `The quote "${quote.slice(0, 80)}" was not found in ${doc.name}. Copy it exactly from read_document or search_documents output.` };
       out.push({ kind: 'document', title: doc.name, ref: doc.id, locator: hit.locator, quote });
+    } else if (s.type === 'record') {
+      const path = String(s.path || '');
+      const quote = String(s.quote || '').trim();
+      if (quote.length < 3 || quote.length > 400) return { ok: false, error: 'Record quotes must be 3 to 300 characters copied exactly from the recorded answer.' };
+      record ??= ((await db.aiSystems.first({ id: ctx.systemId }, { columns: ['data'] }))?.data || {}) as AssessmentData;
+      const cur = currentValue(record, path);
+      const text = cur === undefined || cur === null || cur === '' ? '' : displayValue(path, cur);
+      if (!text) return { ok: false, error: `Nothing is recorded at ${path}. Record sources must quote an answer already in the assessment.` };
+      if (!norm(text).includes(norm(quote))) return { ok: false, error: `The quote "${quote.slice(0, 80)}" is not in the recorded answer at ${path} ("${text.slice(0, 120)}").` };
+      out.push({ kind: 'system', title: `Assessment record: ${fieldFor(path)?.label.slice(0, 120) || path}`, ref: path, quote });
     } else if (s.type === 'model') {
+      if (!externalResearchOn()) return { ok: false, error: 'Only the client\'s documents and the assessment record count as sources. Outside research is switched off.' };
       const row = await db.models.first({ mkey: String(s.model_key || '') });
       if (!row || row.status !== 'ready' || !ctx.models.has(row.mkey)) return { ok: false, error: 'Call lookup_model first and use the model_key it returns.' };
       const section = String(s.section || '');
@@ -220,7 +237,7 @@ async function checkSources(ctx: Ctx, raw: unknown): Promise<{ ok: true; sources
       const label = DOSSIER_KEYS.find(([k]) => k === section)?.[1] || section;
       out.push({ kind: 'model', title: `${row.provider} ${row.model}: ${label}`, ref: row.mkey, locator: section, quote: text.slice(0, 300) });
       for (const w of (row.sources || []).filter(x => x.ref === section).slice(0, 3)) out.push({ kind: 'web', title: w.title, ref: row.mkey, url: w.url, quote: w.quote });
-    } else return { ok: false, error: 'Source type must be "document" or "model".' };
+    } else return { ok: false, error: 'Source type must be "document" or "record".' };
   }
   return { ok: true, sources: out };
 }
@@ -241,6 +258,8 @@ async function propose(ctx: Ctx, sp: Specialist, input: Record<string, unknown>)
   if (path.startsWith('ctrl.') && ['met', 'partial'].includes((v.value as { s: string }).s) && !src.sources.some(s => s.kind === 'document')) {
     return reject('a control can only be "met" or "partial" on the strength of the client\'s own documents.');
   }
+  const grounded = await groundingCheck(ctx, path, v.value, src.sources);
+  if (!grounded.ok) return reject(grounded.error);
   const sys = await db.aiSystems.first({ id: ctx.systemId }, { columns: ['data'] });
   const prev = currentValue((sys?.data || {}) as AssessmentData, path);
   if (prev !== undefined && JSON.stringify(prev) === JSON.stringify(v.value)) return 'Already recorded with this value; nothing to propose.';
@@ -255,6 +274,20 @@ async function propose(ctx: Ctx, sp: Specialist, input: Record<string, unknown>)
   ctx.meter.proposal(sp.key);
   await ctx.log(`Proposed ${path} (sources checked: ${src.sources.filter(x => x.kind !== 'web').length})`);
   return `Recorded proposal for ${path}.`;
+}
+
+/** The grounding judge, metered and traced as part of the source checker. */
+async function groundingCheck(ctx: Ctx, path: string, value: unknown, sources: Source[]) {
+  const s = span(ctx, 'checker', `Verify the sources of every proposal for ${ctx.systemName}`);
+  const t0 = Date.now();
+  const label = fieldFor(path)?.label || path;
+  const shown = path.startsWith('ctrl.') ? `${displayValue(path, value)}. Evidence note: ${(value as { e?: string }).e || ''}` : displayValue(path, value);
+  const res = await withSpend({ agent: 'checker' }, () => judge(label, shown, sources, (m, msg, ms) => {
+    const { t, cost } = ctx.meter.llm('checker', m, msg, ms);
+    s.llm(m, t, cost, t0, t0 + ms, msg.stop_reason);
+  }));
+  s.tool('grounding_judge', t0, Date.now(), res.ok, res.ok ? 'supported by its sources' : res.error);
+  return res;
 }
 
 /** The model researcher: returns a library entry, researching it when needed, metered and traced as its own agent. */
@@ -276,7 +309,7 @@ async function runTool(ctx: Ctx, sp: Specialist, name: string, input: Record<str
     case 'list_documents': {
       const docs = await db.documents.find({ systemId: ctx.systemId }, { orderBy: [['createdAt', 'asc']] });
       await ctx.log(`Listed ${docs.length} document${docs.length === 1 ? '' : 's'}`);
-      if (!docs.length) return 'No documents have been uploaded for this system. Work from the current assessment and the model library, and say in your summary which documents would help.';
+      if (!docs.length) return 'No documents have been uploaded for this system. You may only propose what the assessment record itself supports (record sources); say in your summary which documents would help.';
       return JSON.stringify(await Promise.all(docs.map(async d => ({ document_id: d.id, name: d.name, status: d.status, pages: d.pages || undefined, sections: await db.chunks.count({ documentId: d.id }), note: d.error || undefined }))));
     }
     case 'search_documents': {
@@ -292,7 +325,7 @@ async function runTool(ctx: Ctx, sp: Specialist, name: string, input: Record<str
       return JSON.stringify({ document: r.doc.name, sections: r.chunks.map(c => ({ section: c.seq, locator: c.locator, text: c.text })), next_section: r.next, total_sections: r.total });
     }
     case 'lookup_model': {
-      if (!toolsFor(sp.key).includes(T_LOOKUP)) return 'This tool is not available to you.';
+      if (!toolsFor(sp.key).includes(T_LOOKUP)) return 'This tool is not available to you. Work only from the documents and the assessment record.';
       const provider = String(input.provider || '').slice(0, 100), model = String(input.model || '').slice(0, 200);
       if (!provider || !model) return 'Give both provider and model.';
       const row = await research(ctx, provider, model);
@@ -428,7 +461,7 @@ async function execute(run: AgentRun) {
     const only = run.specialist as SpecialistKey | null;
     const writers = only ? [only] : WRITERS;
 
-    const looked = writers.some(w => w !== 'controls') ? await prelookup(ctx, data) : '';
+    const looked = externalResearchOn() && writers.some(w => w !== 'controls') ? await prelookup(ctx, data) : '';
     const docCount = await db.documents.count({ systemId: run.systemId, status: 'ready' });
     let map = 'No evidence documents have been uploaded for this system.';
     if (docCount) {

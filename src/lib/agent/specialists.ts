@@ -15,6 +15,10 @@ export type Specialist = {
   examples: string[];
 };
 
+/** Outside research about foundation models is off unless an administrator sets AGENT_EXTERNAL_RESEARCH=on: by
+ * default the crew works only from the client's documents and assessment record (see grounding.ts). */
+export const externalResearchOn = () => (process.env.AGENT_EXTERNAL_RESEARCH || '').toLowerCase() === 'on';
+
 export const SPECIALISTS: Specialist[] = [
   {
     key: 'reader', slug: 'evidence-reader', name: 'Evidence reader', role: 'Lists, searches and reads your documents', sections: [], llm: true, turns: 14,
@@ -23,7 +27,7 @@ export const SPECIALISTS: Specialist[] = [
   },
   {
     key: 'research', slug: 'model-researcher', name: 'Model researcher', role: 'Checks what the model provider publishes', sections: [], llm: true, turns: 6,
-    description: 'Researches what a foundation-model provider publishes about a model (model or system card, usage policy, data handling, EU AI Act status) from official sources only, and keeps it in a shared model library.',
+    description: 'Optional, off by default. When an administrator switches on outside research, looks up what a foundation-model provider publishes about a model (model or system card, usage policy, data handling, EU AI Act status) from official sources and keeps it in a shared model library.',
     examples: ['What does Anthropic publish about Claude Sonnet 5.5 limitations?', 'Look up the usage policy for GPT-5'],
   },
   {
@@ -38,7 +42,7 @@ export const SPECIALISTS: Specialist[] = [
   },
   {
     key: 'docs', slug: 'documentation-writer', name: 'Documentation writer', role: 'Model card and monitoring metrics', sections: ['card', 'metric'], llm: true, turns: 12,
-    description: 'Writes the model card (model, data, intended use, limitations, out-of-scope uses) and the monitoring metrics from the evidence and the provider\'s published documentation.',
+    description: 'Writes the model card (model, data, intended use, performance, limitations, out-of-scope uses) and the monitoring metrics from the client\'s evidence and assessment record only.',
     examples: ['Write the model card for the CV screening tool', 'Which monitoring metrics are documented for Loan scoring?'],
   },
   {
@@ -47,16 +51,19 @@ export const SPECIALISTS: Specialist[] = [
     examples: ['Draft the conformity answers for Talent Match', 'Prepare the technical conformity questions for Loan scoring'],
   },
   {
-    key: 'checker', slug: 'source-checker', name: 'Source checker', role: 'Verifies every quote before you see it', sections: [], llm: false, turns: 0,
-    description: 'Verifies that a quote really appears in a system\'s evidence documents and returns where. In an assessment it checks every source before a proposal reaches a reviewer, and sends back anything it cannot find.',
+    key: 'checker', slug: 'source-checker', name: 'Source checker', role: 'Keeps every answer grounded in your evidence', sections: [], llm: true, turns: 0,
+    description: 'Verifies that a quote really appears in a system\'s evidence documents and returns where. In an assessment it checks every source of every proposal against the documents and the assessment record, and its grounding judge sends back any statement the quotes do not support, before a reviewer sees it.',
     examples: ['Check that "Independent validation was completed in August 2026" appears in the Loan scoring evidence'],
   },
 ];
 
 export const COORDINATOR = {
   key: 'coordinator' as const, slug: 'coordinator', name: 'Assessment coordinator', role: 'Runs the crew in order',
-  description: 'Runs a full assessment by handing the work to the specialists in order: evidence reader, model researcher, risk classifier, controls assessor, documentation writer and conformity writer, with the source checker verifying every proposal.',
+  description: 'Runs a full assessment by handing the work to the specialists in order: evidence reader, risk classifier, controls assessor, documentation writer and conformity writer, with the source checker keeping every proposal grounded in the client\'s own evidence.',
 };
+
+/** The specialists this installation publishes: the model researcher only when outside research is switched on. */
+export const activeSpecialists = () => SPECIALISTS.filter(s => s.key !== 'research' || externalResearchOn());
 
 /** The order the coordinator runs the writing specialists in. */
 export const WRITERS: SpecialistKey[] = ['classify', 'controls', 'docs', 'conformity'];
