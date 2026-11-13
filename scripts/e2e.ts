@@ -176,6 +176,11 @@ async function main() {
     check('contributor uploads a document and its text is read', up.status === 201 && upBody.documents?.[0]?.status === 'ready', JSON.stringify(upBody));
     const docId = upBody.documents?.[0]?.id;
     check('viewer downloads the document', (await get(`/api/documents/${docId}`, c.viewer)).status === 200);
+    check('an uploaded document is recognised for the evidence checklist', (upBody.documents?.[0]?.kinds || []).includes('validation'), JSON.stringify(upBody.documents?.[0]?.kinds));
+    check('a viewer cannot change what a document covers', (await send(`/api/documents/${docId}`, 'PATCH', c.viewer, { kinds: ['policy'] })).status === 403);
+    check('unknown evidence types are refused', (await send(`/api/documents/${docId}`, 'PATCH', c.contrib, { kinds: ['spaceships'] })).status === 400);
+    check('a contributor marks the document as also covering monitoring', (await send(`/api/documents/${docId}`, 'PATCH', c.contrib, { kinds: ['validation', 'monitoring'] })).status === 200
+      && JSON.stringify((await (await get(`/api/systems/${s1.id}/documents`, c.viewer)).json()).documents?.[0]?.kinds) === '["validation","monitoring"]');
     check('another client cannot download the document', (await get(`/api/documents/${docId}`, c.other)).status === 404);
     check('agent is refused while AI assistance is off for the client', (await send(`/api/systems/${s1.id}/agent`, 'POST', c.contrib, {})).status === 503);
     await db.organizations.update({ id: orgA.id }, { aiEnabled: true });

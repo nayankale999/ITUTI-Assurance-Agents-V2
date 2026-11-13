@@ -129,3 +129,19 @@ test('a resolved action on a gap that is still open shows as awaiting the assess
   assert.equal(p.awaitingUpdate, 1);
   assert.equal(p.withoutAction, gaps.length - 1);
 });
+
+test('evidence types are recognised from names and titles, and the checklist follows the system', async () => {
+  const { detectKinds, evidenceChecklist } = await import('../src/lib/evidence');
+  assert.deepEqual(detectKinds('DPIA - Loan scoring v2.pdf', ''), ['dpia']);
+  assert.ok(detectKinds('report.pdf', '# Credit scoring model: validation report\n\nIndependent validation...').includes('validation'));
+  assert.deepEqual(detectKinds('notes.txt', ''), []);
+  const sys = { profile: { personal: 'none', affects: 'no', source: 'inhouse' } };
+  const c1 = evidenceChecklist(sys, []);
+  assert.equal(c1.items.find(i => i.id === 'dpia')?.needed, false);
+  assert.equal(c1.provided, 0);
+  const c2 = evidenceChecklist({ profile: { personal: 'personal' } }, [{ id: 'd1', name: 'DPIA.pdf', status: 'ready', kinds: ['dpia'] }, { id: 'd2', name: 'scan.pdf', status: 'failed', kinds: ['policy'] }]);
+  const dpia = c2.items.find(i => i.id === 'dpia')!;
+  assert.ok(dpia.needed && dpia.provided[0].id === 'd1');
+  assert.equal(c2.items.find(i => i.id === 'policy')!.provided.length, 0);
+  assert.equal(c2.items.find(i => i.id === 'policy')!.unreadable.length, 1);
+});

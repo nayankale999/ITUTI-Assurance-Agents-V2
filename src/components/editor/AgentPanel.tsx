@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AssessmentData } from '@/lib/assurance';
 import { AgentCrew } from './AgentCrew';
+import { evidenceChecklist } from '@/lib/evidence';
 
-type Doc = { id: string; name: string; size: number; pages: number; chars: number; status: string; error: string | null; createdAt: string };
+type Doc = { id: string; name: string; size: number; pages: number; chars: number; status: string; error: string | null; kinds: string[]; createdAt: string };
 type Src = { kind: string; title: string; ref: string; locator?: string; quote?: string; url?: string };
 type Prop = { id: string; path: string; label: string; section: string; kind: string; value: unknown; display: string; previous: string | null; rationale: string; confidence: 'high' | 'medium' | 'low'; sources: Src[] };
 type Run = { id: string; status: 'queued' | 'running' | 'completed' | 'failed'; log: { at: string; text: string }[]; summary: string | null; error: string | null; proposals: number; createdAt: string; finishedAt: string | null; usage?: Record<string, any> | null; specialist?: string | null };
 
 type Props = {
   systemId: string;
+  data: AssessmentData;
   canEdit: boolean;
   canUpload: boolean;
   canDecide: (path: string) => boolean;
@@ -89,6 +91,14 @@ export function AgentPanel(props: Props) {
     load();
   }
 
+  async function setKinds(d: Doc, kinds: string[]) {
+    setBusy(`k-${d.id}`); setMsg({});
+    const r = await call(`/api/documents/${d.id}`, 'PATCH', { kinds });
+    setBusy('');
+    if (!r.ok) setMsg({ err: r.body.error || 'Could not update the checklist.' });
+    load();
+  }
+
   async function start() {
     setMsg({});
     const r = await call(`/api/systems/${systemId}/agent`, 'POST', {});
@@ -161,14 +171,16 @@ export function AgentPanel(props: Props) {
         </div>
       </section>
 
+      {docs !== null && <EvidenceChecklist data={props.data} docs={docs} canEdit={props.canUpload} busy={busy} setKinds={setKinds} />}
+
       <section className="panel">
         <header>
-          <div><h3>Assessment agent</h3><small className="muted">Reads the documents and, for vendor or foundation models, what the provider publishes. It proposes answers with sources; nothing changes until you accept it.</small></div>
+          <div><h3>Assessment agent</h3><small className="muted">Reads only the documents uploaded here and the answers recorded for this system. It proposes answers with exact quotes as sources; nothing changes until you accept it.</small></div>
           {canEdit && aiEnabled && <button className="btn primary" onClick={start} disabled={!!active}>{active ? 'Agent running…' : run ? 'Run again' : 'Pre-fill with agent'}</button>}
         </header>
         <div className="body">
           {!aiEnabled && <p className="muted">{blockedReason}</p>}
-          {aiEnabled && !run && <p className="muted">{ready ? `Ready to read ${ready} document${ready === 1 ? '' : 's'}.` : 'Upload documents first for the best results. Without them the agent can only use public information about the model.'} A run usually takes a few minutes; you can leave this page while it works.</p>}
+          {aiEnabled && !run && <p className="muted">{ready ? `Ready to read ${ready} document${ready === 1 ? '' : 's'}.` : 'Upload documents first: the agent works only from the documents and the answers recorded for this system, so without documents it has little to go on.'} A run usually takes a few minutes; you can leave this page while it works.</p>}
           {run && (
             <div className="runbox">
               <p>
@@ -244,5 +256,56 @@ export function AgentPanel(props: Props) {
         </div>
       </section>
     </div>
+  );
+}
+
+/** What the assessment needs as evidence, ticked off as matching documents are uploaded and read. */
+function EvidenceChecklist({ data, docs, canEdit, busy, setKinds }: { data: AssessmentData; docs: Doc[]; canEdit: boolean; busy: string; setKinds: (d: Doc, kinds: string[]) => void }) {
+  const [showAll, setShowAll] = useState(false);
+  const { items, needed, provided } = evidenceChecklist(data, docs);
+  const ready = docs.filter(d => d.status === 'ready');
+  const list = items.filter(i => showAll || i.needed);
+  const pct = needed ? Math.round(provided / needed * 100) : 0;
+  return (
+    <section className="panel">
+      <header>
+        <div><h3>Evidence checklist</h3><small className="muted">The documents an assessment of this system needs. Each is ticked once a readable document covers it; the list follows the profile and classification.</small></div>
+        <div className="spacer" />
+        <span className={`pill ${provided === needed && needed ? 't-good' : provided ? 't-info' : 't-muted'}`}>{provided} of {needed} provided</span>
+      </header>
+      <div className="body">
+        <div className="barwrap" style={{ marginBottom: 10 }}><div className="bar"><i style={{ width: `${pct}%` }} /></div>{pct}%</div>
+        <table className="ledger checklist">
+          <thead><tr><th style={{ width: 34 }}><span className="sr-only">Status</span></th><th>Evidence</th><th>Documents</th></tr></thead>
+          <tbody>{list.map(i => {
+            const ok = i.provided.length > 0;
+            const others = ready.filter(d => !(d.kinds || []).includes(i.id));
+            return (
+              <tr key={i.id} className={i.needed ? '' : 'muted'}>
+                <td aria-label={ok ? 'Provided' : i.unreadable.length ? 'Uploaded but unreadable' : 'Missing'}>
+                  {ok ? <span className="pill t-good" title="Provided">✓</span> : i.unreadable.length ? <span className="pill t-warn" title="Uploaded but unreadable">!</span> : <span className="pill t-muted" title="Missing">–</span>}
+                </td>
+                <td><b>{i.label}</b>{!i.needed && <small className="muted"> (not needed for this system)</small>}<small className="muted" style={{ display: 'block' }}>{i.examples} · {i.controls.join(', ')}</small></td>
+                <td>
+                  {i.provided.map(d => { const doc = docs.find(x => x.id === d.id)!; return (
+                    <span key={d.id} className="tag" style={{ marginRight: 6 }}>{d.name}{canEdit && <button type="button" className="linkbtn" aria-label={`${d.name} does not cover ${i.label}`} title="Does not cover this" disabled={busy === `k-${d.id}`} onClick={() => setKinds(doc, doc.kinds.filter(k => k !== i.id))}> ×</button>}</span>
+                  ); })}
+                  {i.unreadable.map(d => <small key={d.id} className="err" style={{ display: 'block' }}>{d.name}: could not be read; upload a text-based copy</small>)}
+                  {!ok && !i.unreadable.length && <span className="muted">Missing</span>}
+                  {canEdit && others.length > 0 && (
+                    <select aria-label={`Mark a document as covering ${i.label}`} value="" style={{ marginLeft: 8, maxWidth: 220 }}
+                      onChange={e => { const d = docs.find(x => x.id === e.target.value); if (d) setKinds(d, [...d.kinds, i.id]); }}>
+                      <option value="">{ok ? 'Add another document…' : 'Covered by an uploaded document…'}</option>
+                      {others.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                  )}
+                </td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
+        <p className="muted" style={{ fontSize: 12.5 }}>Types are recognised from each document’s name and title; correct them here if a document was missed or matched wrongly. {items.some(i => !i.needed) && <button type="button" className="v-plain linkish" onClick={() => setShowAll(v => !v)}>{showAll ? 'Hide evidence not needed for this system' : `Show all ${items.length} evidence types`}</button>}</p>
+      </div>
+    </section>
   );
 }

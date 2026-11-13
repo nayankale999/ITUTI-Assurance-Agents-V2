@@ -128,6 +128,10 @@ export const MIGRATIONS: [string, string[]][] = [
       message TEXT NULL, requestedById ${ID}, status VARCHAR(16) NOT NULL, decidedById ${REF}, decidedAt ${AT_NULL}, createdAt ${AT},
       KEY ix_upg_org (orgId, status), KEY ix_upg_status (status, createdAt)) ${T}`,
   ]],
+  ['013_evidence_kinds', [
+    // The evidence types a document provides (lib/evidence.ts): detected at upload, correctable by people
+    `ALTER TABLE documents ADD COLUMN kinds JSON NULL`,
+  ]],
 ];
 
 /** Applies pending migrations. A named lock stops two app processes migrating at once. */

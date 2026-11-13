@@ -1,6 +1,7 @@
 /* Evidence documents: storage, text extraction and search.
  * Files are kept under DATA_DIR/documents/<systemId>/<documentId>. Their text is split into chunks
  * with a locator (page, sheet rows or section) so the agent can cite exactly where a fact came from. */
+import { detectKinds } from './evidence';
 import fs from 'fs/promises';
 import path from 'path';
 import { createHash } from 'crypto';
@@ -131,13 +132,14 @@ export async function addDocument(opts: { orgId: string; systemId: string; name:
     const rows = kept.map((p, i) => ({ documentId: doc.id, systemId: opts.systemId, seq: i, locator: p.locator, text: p.text }));
     for (let i = 0; i < rows.length; i += 100) await db.chunks.insertMany(rows.slice(i, i + 100));
     const truncated = kept.length < pieces.length;
-    const patch = { pages, chars: total, error: truncated ? 'Only the first 1.5 million characters were read.' : null };
+    const patch = { pages, chars: total, error: truncated ? 'Only the first 1.5 million characters were read.' : null, kinds: detectKinds(name, kept.map(p => p.text).join('\n').slice(0, 3000)) };
     await db.documents.update({ id: doc.id }, patch);
     return { ...doc, ...patch };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Could not read this file.';
-    await db.documents.update({ id: doc.id }, { status: 'failed', error: msg.slice(0, 500) });
-    return { ...doc, status: 'failed', error: msg };
+    const kinds = detectKinds(name, '');
+    await db.documents.update({ id: doc.id }, { status: 'failed', error: msg.slice(0, 500), kinds });
+    return { ...doc, status: 'failed', error: msg, kinds };
   }
 }
 
@@ -186,4 +188,13 @@ export async function readDocument(systemId: string, documentId: string, fromSeq
   const total = await db.chunks.count({ documentId });
   const after = out.length ? out[out.length - 1].seq + 1 : total;
   return { doc, chunks: out, next: after < total ? after : null, total };
+}
+
+/** A document's evidence kinds, detecting and saving them for documents uploaded before detection existed. */
+export async function kindsOf(doc: { id: string; name: string; kinds?: string[] | null }): Promise<string[]> {
+  if (Array.isArray(doc.kinds)) return doc.kinds;
+  const chunks = await db.chunks.find({ documentId: doc.id }, { orderBy: [['seq', 'asc']], limit: 3 });
+  const kinds = detectKinds(doc.name, chunks.map(c => c.text).join('\n').slice(0, 3000));
+  await db.documents.update({ id: doc.id }, { kinds });
+  return kinds;
 }

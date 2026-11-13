@@ -325,7 +325,7 @@ export function SystemEditor(props: Props) {
         ))}
       </nav>
 
-      {tab === 'agent' && <AgentPanel systemId={props.system.id} canEdit={canEdit} canUpload={canEdit || !!scopes?.includes('evidence')} canDecide={path => canEdit || (!!scopes && proposalAllowed(scopes, path))} aiEnabled={aiEnabled} blockedReason={props.aiBlockedReason} accept={props.accept}
+      {tab === 'agent' && <AgentPanel systemId={props.system.id} data={data} canEdit={canEdit} canUpload={canEdit || !!scopes?.includes('evidence')} canDecide={path => canEdit || (!!scopes && proposalAllowed(scopes, path))} aiEnabled={aiEnabled} blockedReason={props.aiBlockedReason} accept={props.accept}
         version={() => version.current} beforeDecide={settle} onApplied={onApplied} onPending={setPending} />}
       {tab === 'profile' && <ProfileTab p={p} ro={!can('profile.name')} setProfile={setProfile} toggleProfile={toggleProfile} next={() => setTab('classify')} />}
       {tab === 'classify' && <ClassifyTab data={data} ro={!can('cls.p1')} setCls={setCls} toggleClsObj={toggleClsObj} confirm={confirmCls} next={() => setTab('controls')} />}

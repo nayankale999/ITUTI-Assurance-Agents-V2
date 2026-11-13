@@ -38,6 +38,8 @@ export type AuditEntry = { id: string; orgId: string | null; systemId: string | 
 export type DocumentRow = {
   id: string; orgId: string; systemId: string; name: string; mime: string; size: number; sha256: string; pages: number; chars: number;
   status: 'ready' | 'failed'; error: string | null; uploadedById: string | null; createdAt: Date;
+  /** Evidence types the document provides (lib/evidence.ts); null until detected. */
+  kinds?: string[] | null;
 };
 export type ChunkRow = { id: string; documentId: string; systemId: string; seq: number; locator: string; text: string };
 export type Source = { kind: 'document' | 'web' | 'model' | 'system'; title: string; ref: string; locator?: string; quote?: string; url?: string };
@@ -107,7 +109,7 @@ export const DEFS = {
   }),
   auditLog: def('audit_log', ['id'], { id: 'str', createdAt: 'date', updatedAt: 'date', orgId: 'str?', systemId: 'str?', userId: 'str?', action: 'str', detail: 'json?' }),
   documents: def('documents', ['id'], {
-    id: 'str', orgId: 'str', systemId: 'str', name: 'str', mime: 'str', size: 'int', sha256: 'str', pages: 'int', chars: 'int', status: 'str', error: 'str?', uploadedById: 'str?', createdAt: 'date',
+    id: 'str', orgId: 'str', systemId: 'str', name: 'str', mime: 'str', size: 'int', sha256: 'str', pages: 'int', chars: 'int', status: 'str', error: 'str?', uploadedById: 'str?', kinds: 'json?', createdAt: 'date',
   }),
   chunks: def('document_chunks', ['id'], { id: 'str', documentId: 'str', systemId: 'str', seq: 'int', locator: 'str', text: 'str' }),
   models: def('model_library', ['id'], {

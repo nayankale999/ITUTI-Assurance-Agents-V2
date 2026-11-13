@@ -1,18 +1,20 @@
 import { db } from '@/data';
 import { apiViewer, loadSystem, json, err, sameOrigin } from '@/lib/api';
-import { addDocument, MAX_BYTES } from '@/lib/documents';
+import { addDocument, kindsOf, MAX_BYTES } from '@/lib/documents';
 import { audit } from '@/lib/audit';
 
 type Ctx = { params: Promise<{ id: string }> };
 export const maxDuration = 120;
 
-const view = (d: Awaited<ReturnType<typeof db.documents.find>>[number]) => ({ id: d.id, name: d.name, size: d.size, pages: d.pages, chars: d.chars, status: d.status, error: d.error, createdAt: d.createdAt });
+const view = (d: Awaited<ReturnType<typeof db.documents.find>>[number]) => ({ id: d.id, name: d.name, size: d.size, pages: d.pages, chars: d.chars, status: d.status, error: d.error, kinds: d.kinds || [], createdAt: d.createdAt });
 
 export async function GET(_: Request, { params }: Ctx) {
   const v = await apiViewer(); if (!v) return err(401, 'Sign in again.');
   const { id } = await params;
   const a = await loadSystem(v, id); if (!a) return err(404, 'Not found.');
-  return json({ documents: (await db.documents.find({ systemId: id }, { orderBy: [['createdAt', 'asc']] })).map(view) });
+  const docs = await db.documents.find({ systemId: id }, { orderBy: [['createdAt', 'asc']] });
+  for (const d of docs) d.kinds = await kindsOf(d);
+  return json({ documents: docs.map(view) });
 }
 
 /** Uploads one or more files as multipart form data (field "file"). */
