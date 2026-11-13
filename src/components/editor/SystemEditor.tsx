@@ -8,6 +8,7 @@ import {
   type AssessmentData, type Control, type Metric, type ProfileField,
 } from '@/lib/assurance';
 import { CARD_FIELDS, cardValue, residualText } from '@/lib/report';
+import { nistCoverage } from '@/lib/nist';
 import { AgentPanel } from './AgentPanel';
 import { useCardProposals, SuggestionBox } from './CardSuggestions';
 import { remember, placeFor, onLeave } from '@/lib/resume';
@@ -392,6 +393,21 @@ function ProfileTab({ p, ro, setProfile, toggleProfile, next }: { p: Record<stri
 }
 
 /* ---------- Classification ---------- */
+const NIST_TONE: Record<string, [string, string]> = { met: ['good', 'Met'], partial: ['warn', 'Partial'], gap: ['crit', 'Not met'], open: ['muted', 'Open'], na: ['muted', 'N/A'], notApplicable: ['muted', 'Not applicable'] };
+function NistPanel({ data }: { data: AssessmentData }) {
+  const { rows, byFn } = nistCoverage(data);
+  return (
+    <section className="panel"><header><div><h3>NIST AI RMF 1.0 coverage</h3><small className="muted">All 72 subcategories of the AI RMF Core, evidenced by the controls that apply to this system.</small></div></header>
+      <div className="scroll"><table className="cov"><thead><tr><th>Function</th><th className="num">Subcategories in scope</th><th className="num">Met</th><th className="num">Partial</th><th className="num">Not met</th><th className="num">Open</th></tr></thead>
+        <tbody>{byFn.map(f => <tr key={f.fn}><td><b>{f.fn}</b><small className="muted" style={{ display: 'block' }}>{f.label}</small></td><td className="num">{f.inScope} of {f.total}</td><td className="num">{f.met}</td><td className="num">{f.partial}</td><td className="num">{f.gap}</td><td className="num">{f.open}</td></tr>)}</tbody></table></div>
+      <details className="body"><summary>Every subcategory and the controls that evidence it</summary>
+        <div className="scroll"><table className="ledger"><thead><tr><th>Subcategory</th><th>Outcome</th><th>Controls</th><th>Status</th></tr></thead>
+          <tbody>{rows.map(r => <tr key={r.id}><td className="mono" style={{ whiteSpace: 'nowrap' }}>{r.id}</td><td>{r.text}</td><td className="mono muted">{r.controls.join(', ') || '–'}</td><td><span className={`pill t-${NIST_TONE[r.status][0]}`}>{NIST_TONE[r.status][1]}</span></td></tr>)}</tbody></table></div>
+      </details>
+    </section>
+  );
+}
+
 function Obligations({ data }: { data: AssessmentData }) {
   return (
     <div className="oblig">
@@ -428,6 +444,12 @@ function ClassifyTab({ data, ro, setCls, toggleClsObj, confirm, next }: { data: 
         </div>
       </section>
 
+      <section className="panel"><header><div><h3>Is it in scope?</h3><small className="muted">EU AI Act Articles 2 and 3(1).</small><Why text={WHY.scope} /></div></header>
+        <div className="qlist">
+          <div className="q"><div><p>Is it a machine-based system that infers from its inputs how to generate outputs such as predictions, content, recommendations or decisions, with some degree of autonomy?</p><span className="ref">Art. 3(1)</span></div><Seg value={c.def} options={yn} ro={ro} onChange={v => setCls('def', v)} /></div>
+          <div className="q"><div><p>Is it used only for military, defence or national security, only for scientific research, only in research and testing before release, or for purely personal use?</p><span className="ref">Art. 2 exclusions</span><Why text={WHY.exclusion} /></div><Seg value={c.excl} options={two} ro={ro} onChange={v => setCls('excl', v)} /></div>
+        </div></section>
+
       <section className="panel"><header><div><h3>Step 1. Prohibited practices</h3><small className="muted">EU AI Act Article 5. Answer every screen.</small><Why text={WHY.prohibited} /></div></header>
         <div className="qlist">{PROHIBITED.map(([k, t, ref]) => (
           <div className="q" key={k}><div><p>{t}</p><span className="ref">{ref}</span></div><Seg value={c[k]} options={yn} ro={ro} onChange={v => setCls(k, v)} /></div>
@@ -444,7 +466,9 @@ function ClassifyTab({ data, ro, setCls, toggleClsObj, confirm, next }: { data: 
       <section className="panel"><header><div><h3>Step 3. Transparency check and general-purpose AI</h3><small className="muted">Select any that apply, or confirm that none do.</small><Why text={WHY.transparency} /></div></header>
         <div className="body"><div className="checks">{TRANSPARENCY.map(([k, t, ref]) => <Chip key={k} on={!!c.t?.[k]} label={t} title={ref} ro={ro} onToggle={() => { toggleClsObj('t', k); if (c.tNone === 'yes') setCls('tNone', 'no'); }} />)}
           <Chip on={c.tNone === 'yes' && !anyTx} label="None of these apply" ro={ro || anyTx} onToggle={() => setCls('tNone', c.tNone === 'yes' ? 'no' : 'yes')} /></div></div>
-        <div className="qlist"><div className="q"><div><p>Do you place a general-purpose AI model on the market, rather than only using one?</p><span className="ref">Art. 51–55</span><Why text={WHY.gpai} /></div><Seg value={c.gpai} options={two} ro={ro} onChange={v => setCls('gpai', v)} /></div></div>
+        <div className="qlist"><div className="q"><div><p>Do you place a general-purpose AI model on the market, rather than only using one?</p><span className="ref">Art. 51–55</span><Why text={WHY.gpai} /></div><Seg value={c.gpai} options={two} ro={ro} onChange={v => setCls('gpai', v)} /></div>
+          {c.gpai === 'yes' && <div className="q"><div><p>Does that model have systemic risk: high-impact capabilities, presumed when training used more than 10^25 floating-point operations, or designated by the Commission?</p><span className="ref">Art. 51</span><Why text={WHY.gpaiSys} /></div><Seg value={c.gpaiSys} options={two} ro={ro} onChange={v => setCls('gpaiSys', v)} /></div>}
+        </div>
       </section>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}><button className="btn primary" onClick={next}>Continue to controls</button></div>
     </>
@@ -535,6 +559,7 @@ function ReportTab({ data, incidents, reportHref }: { data: AssessmentData; inci
         <div className="scroll"><table className="cov"><thead><tr><th>Framework</th><th className="num">Controls mapped</th><th>Readiness</th><th className="num">Not met</th><th className="num">Partial</th><th className="num">Open</th></tr></thead>
           <tbody>{cov.map(f => <tr key={f.key}><td><b>{f.name}</b></td><td className="num">{f.count}</td><td><div className="barwrap"><div className="bar"><i style={{ width: `${f.r.pct}%` }} /></div>{f.r.pct}%</div></td><td className="num">{f.r.gap}</td><td className="num">{f.r.partial}</td><td className="num">{f.r.open}</td></tr>)}</tbody></table></div>
       </section>
+      <NistPanel data={data} />
       <div className="grid2">
         <section className="panel"><header><h3>Classification and obligations</h3></header><div className="body">
           <div><TierPill tier={r.tier} /></div>
@@ -576,8 +601,8 @@ function CardTab({ data, ro, mutate, cardHref, ...agent }: CardTabProps) {
         {agent.canEdit && sug.list.length > 1 && <><div className="spacer" /><button type="button" className="btn primary" onClick={() => sug.decide('accept', sug.list.map(x => x.id))} disabled={!!sug.busy}>Accept all {sug.list.length} suggestions</button></>}
       </header><div className="body">
         {sug.list.length > 0
-          ? <p className="note">The assessment agent has suggested {sug.list.length} model card {sug.list.length === 1 ? 'entry' : 'entries'} from your documents and the model provider&rsquo;s published information. Check each one, then accept or reject it.</p>
-          : empty > 0 && !sug.hasRun && <p className="note">Run the assessment agent from <button type="button" className="v-plain linkish" onClick={agent.goAgent}>Evidence and agent</button> to fill this card from your documents and, for vendor models such as Anthropic&rsquo;s Claude, the provider&rsquo;s published model card.</p>}
+          ? <p className="note">The assessment agent has suggested {sug.list.length} model card {sug.list.length === 1 ? 'entry' : 'entries'} from your documents and the answers recorded for this system. Check each one, then accept or reject it.</p>
+          : empty > 0 && !sug.hasRun && <p className="note">Run the assessment agent from <button type="button" className="v-plain linkish" onClick={agent.goAgent}>Evidence and agent</button> to fill this card from your documents. It uses only what your documents and this record say.</p>}
         {sug.msg.ok && <p className="ok" role="status">{sug.msg.ok}</p>}
         {sug.msg.err && <p className="err" role="alert">{sug.msg.err}</p>}
         <p className="muted" style={{ fontSize: 12.5 }}>Empty fields fall back to what the profile and monitoring already say.</p>

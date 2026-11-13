@@ -169,7 +169,7 @@ async function AgentAccess({ orgId, plan, aiEnabled }: { orgId: string; plan: st
           ))}</tbody>
           <tfoot><tr><td colSpan={7}><b>{crew.runs} run{crew.runs === 1 ? '' : 's'}</b>{crew.legacyTokens ? <span className="muted"> · {tokens(crew.legacyTokens)} tokens from earlier runs without a breakdown</span> : null}</td><td className="num"><b>{usd(crew.total.cost)}</b></td></tr></tfoot>
         </table></div>
-        <p className="muted" style={{ fontSize: 12 }}>Estimates at Anthropic list prices (set ANTHROPIC_PRICES to change them). Web searches by the model researcher are billed separately by Anthropic and not included.</p>
+        <p className="muted" style={{ fontSize: 12 }}>Estimates at Anthropic list prices (set ANTHROPIC_PRICES to change them). Web searches (only when outside research is switched on) are billed separately by Anthropic and not included.</p>
       </> : <p className="muted">No assessment runs this month.</p>}
       {keys.length > 0 && (
         <table className="ledger"><thead><tr><th>Key</th><th>Created</th><th>Last used</th><th /></tr></thead>

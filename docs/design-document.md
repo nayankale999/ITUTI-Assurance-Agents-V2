@@ -19,7 +19,7 @@ The platform gives a regulated organisation one record of every AI system it bui
 | AI inventory | One record per AI system: purpose, owner, team, business unit, vendor and model, users and people affected, lifecycle | AI inventory, system Profile tab |
 | AI risk management | EU AI Act classification (prohibited, high, limited, minimal), inherent risk score, reassessment when the context changes | Classification tab, Risk management |
 | AI advisory | A five-step compliance journey with the next step and "why we ask" guidance on every question | Journey bar on each system |
-| Conformity assessment | 39 controls across 9 areas, and 38 Article 43 / Annex VI questions in organisational, project and technical parts | Controls and Conformity tabs |
+| Conformity assessment | 51 controls across 10 areas, and 41 Article 43 / Annex VI questions in organisational, project and technical parts | Controls and Conformity tabs |
 | Audit-ready documentation | Assurance report, Annex IV technical file, model card (shareable), conformity and audit trail, inventory, risk and incident reports, CSV exports | Report, Documents |
 | AI incident tracker | Incidents per system with severity, category and regulator-reportable flag; gap actions with owner, department and due date | Monitoring tab, Incident tracker, Action plan |
 
@@ -95,7 +95,7 @@ All state lives in one MySQL 8 or MariaDB 10.6+ database (31 tables, utf8mb4) pl
 
 Every system is assessed on one control set mapped to four frameworks at once: the EU AI Act, UK requirements (the AI white-paper principles, FCA Consumer Duty, SM&CR and PRA SS1/23), ISO/IEC 42001 and the NIST AI RMF. Each control carries its references to all four, so one answer serves every framework.
 
-**Controls: 39 in 9 areas.** 20 apply only in some contexts (for example generative AI, high-risk systems or providers), so the applicable set follows the profile and classification. Each control is rated met, partly met, not met or not applicable, with an evidence note.
+**Controls: 51 in 10 areas.** 31 apply only in some contexts (for example generative AI, high-risk systems, providers, importers, distributors, public bodies or general-purpose models), so the applicable set follows the profile and classification. Each control is rated met, partly met, not met or not applicable, with an evidence note.
 
 | Area | Controls |
 | --- | --- |
@@ -123,7 +123,7 @@ Every system is assessed on one control set mapped to four frameworks at once: t
 
 A sixth tile, **Close the gaps**, follows: every control not met and every unconfirmed question becomes a gap in the action plan.
 
-**Conformity assessment: 38 questions** for Article 43 internal control (Annex VI): 5 organisational, 18 project and 15 technical. Answers are pre-filled from the rest of the record where possible and must be confirmed by a person.
+**Conformity assessment: 41 questions** for Article 43 internal control (Annex VI): 6 organisational, 20 project and 15 technical. Answers are pre-filled from the rest of the record where possible and must be confirmed by a person.
 
 ## AI agents: the assessment crew
 
@@ -135,12 +135,11 @@ The researcher and the reader prepare shared inputs once; the four writers then 
 
 | Specialist | Job | Proposes | Tools | Turns | Model |
 | --- | --- | --- | --- | --- | --- |
-| Model researcher | Looks up what a foundation-model provider publishes, from official sources only, into a shared library | — | Web search and fetch (provider domains) | 6 | Agent model |
 | Evidence reader | Reads the client's documents and writes an evidence map: topics, sections and exact quotes | — | List, search, read documents | 14 | Agent model (Sonnet recommended) |
-| Risk classifier | System profile and EU AI Act classification | `profile.*`, `cls.*` | Documents, model lookup, propose | 18 | Agent model |
+| Risk classifier | System profile and EU AI Act classification | `profile.*`, `cls.*` | Documents, propose | 18 | Agent model |
 | Controls assessor | Rates each applicable control from the client's own documents | `ctrl.*` | Documents, propose | 30 | Agent model |
-| Documentation writer | Model card and monitoring metrics | `card.*`, `metric.*` | Documents, model lookup, propose | 12 | Agent model |
-| Conformity writer | Answers the Article 43 / Annex VI questions | `conf.*` | Documents, model lookup, propose | 24 | Agent model |
+| Documentation writer | Model card and monitoring metrics | `card.*`, `metric.*` | Documents, propose | 12 | Agent model |
+| Conformity writer | Answers the Article 43 / Annex VI questions | `conf.*` | Documents, propose | 24 | Agent model |
 | Source checker | Verifies every source of every proposal before it is stored | — | Deterministic, no model calls | — | — |
 
 The agent model is `claude-opus-5-5` by default; any specialist can be given another (`ANTHROPIC_MODEL_<SPECIALIST>`). The conversation sent to Claude is cached between turns (prompt caching), which keeps the cost of long runs down.
@@ -157,9 +156,9 @@ A run is a background job that turns evidence into proposals; people turn propos
 
 1. **Start.** From the Evidence and agent tab, the main A2A agent, a specialist A2A agent or the MCP `start_assessment` tool. Only one run per system at a time; a run with no heartbeat for 4 minutes is marked failed.
 2. **Checks.** AI must be switched on for the client; no hard-stop budget may be used up; on the per-assessment plan a new billable assessment needs confirmation (re-runs within 30 days are included).
-3. **Research and reading.** The model researcher looks up the foundation models named in the profile (cached for 90 days in the model library). The evidence reader maps the documents.
-4. **Writing.** Each writer gets only its own fields with their current values, the profile, the evidence map, model facts and what earlier writers proposed, then proposes values with sources. A proposal for a field that already holds that value is skipped; a newer proposal for the same field supersedes the older one.
-5. **Verification.** The source checker finds every document quote word for word and records its page or section; model sources must come from a library entry looked up in this run; a control can only be met or partly met on the client's own documents.
+3. **Reading.** The evidence reader maps the documents. No outside research is done: the crew works only from the documents and the answers recorded for the system.
+4. **Writing.** Each writer gets only its own fields with their current values, the profile, the evidence map and what earlier writers proposed, then proposes values with sources. A proposal for a field that already holds that value is skipped; a newer proposal for the same field supersedes the older one.
+5. **Verification (grounding).** The source checker finds every document quote word for word and records its page or section, and checks quotes from recorded answers against the record; no other kind of source is accepted. The grounding judge then sees only the proposed value and its quotes and sends back any statement they do not support. A control can only be met or partly met on the client's own documents.
 6. **Review.** People see each proposal with its current value, confidence, rationale and sources, accept (optionally editing the value) or reject, one at a time or all high-confidence ones at once. Accepting saves with the record's version, so two people cannot overwrite each other.
 7. **Follow-on.** Readiness, the journey and the history update; owner tasks whose gap is now closed close themselves; with automatic actions on, any new gap gets an owner.
 
@@ -177,7 +176,6 @@ JSON-RPC 2.0 over HTTPS with `message/send`, `message/stream` (server-sent event
 | --- | --- | --- |
 | Ituti AI Assurance (main) | `/api/a2a` | Portfolio, register a system and evidence, run an assessment (confirms billable runs), results and gaps |
 | Evidence reader | `/api/a2a/agents/evidence-reader` | Answers from a system's documents with quotes |
-| Model researcher | `/api/a2a/agents/model-researcher` | What a provider publishes about a model |
 | Risk classifier | `/api/a2a/agents/risk-classifier` | Runs and reports the profile and classification |
 | Controls assessor | `/api/a2a/agents/controls-assessor` | Runs and reports the control ratings |
 | Documentation writer | `/api/a2a/agents/documentation-writer` | Runs and reports the model card and metrics |
@@ -198,7 +196,7 @@ Streamable HTTP at `/api/mcp`, stateless (one server per request, scoped to the 
 | `add_evidence` | Saves pasted text or a file (base64, 25 MB) as evidence | Yes |
 | `search_evidence`, `read_evidence` | Full-text search, list and read documents | No |
 | `verify_quote` | Whether a quote appears word for word, and where | No |
-| `lookup_model` | Provider facts about a foundation model, with links | Library only |
+| `lookup_model` | Provider facts about a foundation model, with links (only when outside research is switched on) | Library only |
 | `start_assessment` | Starts the crew or one specialist; asks before a billable run | Yes |
 | `assessment_status` | Latest run, each specialist's work and cost, proposals by section | No |
 | `list_proposals` | Proposals with confidence, rationale and verified sources | No |

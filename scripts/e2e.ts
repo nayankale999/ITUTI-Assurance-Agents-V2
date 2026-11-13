@@ -229,6 +229,7 @@ async function main() {
     check('nothing is left to review', ((await (await get(`/api/systems/${s1.id}/agent`, c.contrib)).json()).proposals || []).length === 0);
     const rep = await (await get(`/o/${orgA.slug}/systems/${s1.id}/report`, c.viewer)).text();
     check('the report lists agent answers with their sources', rep.includes('Answers proposed by the assessment agent') && rep.includes('validation-report.md'));
+    check('the report shows NIST AI RMF coverage by subcategory', rep.includes('NIST AI RMF 1.0 coverage') && rep.includes('MEASURE 2.5'));
     check('the editor shows the Evidence and agent tab', (await (await get(`/o/${orgA.slug}/systems/${s1.id}`, c.contrib)).text()).includes('Evidence and agent'));
 
     // ---------- A2A agent endpoint (IBM watsonx Orchestrate and other A2A clients) ----------

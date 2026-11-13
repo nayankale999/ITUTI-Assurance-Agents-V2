@@ -40,7 +40,7 @@ Every AI system goes through the same five steps. The system's page shows them a
 | 2. Prohibited scan | Answer 8 screens for practices the EU AI Act bans | A clear stop if a use is prohibited |
 | 3. Risk assessment | Confirm the classification and the risk factors | A tier (Prohibited, High, Limited, Minimal, Needs legal review) and an inherent risk band (Low, Moderate, Elevated, Severe) |
 | 4. Transparency | Say who interacts with the system and what they are told | The transparency obligations that apply |
-| 5. Conformity | Work through up to 38 questions | A conformity record and readiness score |
+| 5. Conformity | Work through up to 41 questions | A conformity record and readiness score |
 
 You can do the steps yourself, or let the assessment agent draft them from your evidence and then review what it proposes (see *Evidence and the assessment agent*). Classification is an indication to support your judgement, not legal advice.
 
@@ -80,28 +80,31 @@ Accept, edit then **Accept edited**, or reject each one. **Accept N high-confide
 
 **Classification** shows the system's EU AI Act tier with the reasons: the prohibited-practice screens, any Annex III use, transparency triggers and exemptions. Tiers are *Prohibited*, *High risk*, *Limited risk*, *Minimal risk*, *Needs legal review* and *Not classified*. Alongside it, the **inherent risk** score combines impact, scale, automation, data and reversibility into a band: Low, Moderate, Elevated or Severe. Changing a profile answer updates both immediately.
 
-**Controls** lists the 39 controls in nine areas that the platform assesses against the EU AI Act, UK expectations (FCA Consumer Duty, SM&CR, PRA SS1/23), ISO/IEC 42001 and the NIST AI RMF:
+**Controls** lists the 51 controls in ten areas that the platform assesses against the EU AI Act, UK expectations (FCA Consumer Duty, SM&CR, PRA SS1/23), ISO/IEC 42001 and the NIST AI RMF:
 
 | Area | Controls |
 | --- | --- |
-| Governance | 6 |
+| Governance | 8 |
 | Risk management | 5 |
 | Data | 5 |
 | Documentation | 3 |
-| Transparency | 4 |
+| Transparency | 6 |
 | Human oversight | 4 |
-| Technical robustness | 5 |
-| Monitoring | 4 |
-| Conformity | 3 |
+| Technical robustness | 6 |
+| Monitoring | 5 |
+| Conformity | 7 |
+| General-purpose AI models | 2 |
 
-Twenty controls apply only when the profile makes them relevant, for example generative AI or high risk; the rest always apply. For each control record **Met**, **Partial**, **Not met** or **Not applicable**, with the evidence and a note. **Readiness** is the share of applicable controls that are met, counting a partial as half.
+The **Report** tab also shows NIST AI RMF 1.0 coverage: all 72 subcategories, which applicable controls evidence each one, and its status.
+
+Thirty-one controls apply only when the profile makes them relevant, for example generative AI, high risk, your role in the value chain or a general-purpose model; the rest always apply. For each control record **Met**, **Partial**, **Not met** or **Not applicable**, with the evidence and a note. **Readiness** is the share of applicable controls that are met, counting a partial as half.
 
 ## Conformity assessment
 
-The **Conformity** tab holds up to 38 questions in three groups:
+The **Conformity** tab holds up to 41 questions in three groups:
 
-- **Organisational** (5): policies, roles and the quality management system around the system.
-- **Project** (18): purpose, data, design choices, testing and human oversight for this system.
+- **Organisational** (6): policies, roles and the quality management system around the system.
+- **Project** (20): purpose, data, design choices, testing and human oversight for this system.
 - **Technical** (15): accuracy, robustness, security, logging and monitoring.
 
 Answer each one in your own words, or accept the agent's drafted answer with its supporting quote. Questions that do not apply to the system's tier and profile are marked so. When the answers are complete, the conformity record feeds the report and the model card.

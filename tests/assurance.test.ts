@@ -52,3 +52,35 @@ test('UK financial services obligations include Consumer Duty and SM&CR', () => 
   const refs = uk.items.map(i => i[1]);
   assert.ok(refs.includes('FCA Consumer Duty') && refs.includes('SM&CR') && refs.includes('PRA SS1/23'));
 });
+
+test('a system that is not an AI system, or is excluded, is outside the AI Act', () => {
+  const base = { profile: { role: ['provider'] }, cls: { p1: 'no', a3: { h_credit: true } } };
+  assert.equal(classify({ ...base, cls: { ...base.cls, def: 'no' } }).tier, 'outside');
+  assert.equal(classify({ ...base, cls: { ...base.cls, excl: 'yes' } }).tier, 'outside');
+  assert.deepEqual(applicable({ ...base, cls: { ...base.cls, def: 'no' } }).map(c => c.id), ['GOV-3']);
+  assert.ok(classify({ ...base, cls: { ...base.cls, def: 'unsure' } }).flags.some(f => f.includes('Art. 3(1)')));
+});
+
+test('value-chain roles, public bodies, workplaces and GPAI bring their own controls', () => {
+  const hi = (profile: Record<string, any>, cls: Record<string, any> = {}) => applicable({ profile, cls: { p1: 'no', p2: 'no', p3: 'no', p4: 'no', p5: 'no', p6: 'no', p7: 'no', p8: 'no', a3: { h_emp: true }, profiling: 'yes', ...cls } }).map(c => c.id);
+  assert.ok(hi({ role: ['provider'], established: 'noneu' }).includes('CNF-5'));
+  assert.ok(!hi({ role: ['provider'], established: 'eu' }).includes('CNF-5'));
+  assert.ok(hi({ role: ['provider'] }).includes('CNF-4') && hi({ role: ['provider'] }).includes('MON-5'));
+  assert.ok(hi({ role: ['importer'] }).includes('CNF-6') && hi({ role: ['distributor'] }).includes('GOV-7'));
+  assert.ok(hi({ role: ['deployer'], affects: 'staff' }).includes('TXP-6'));
+  assert.ok(hi({ role: ['deployer'], publicBody: 'yes' }).includes('CNF-7'));
+  assert.ok(hi({ role: ['provider'] }, { gpai: 'yes', gpaiSys: 'yes' }).includes('GPA-2'));
+  assert.ok(!hi({ role: ['provider'] }, { gpai: 'no', gpaiSys: 'yes' }).includes('GPA-2'));
+  assert.ok(classify({ profile: { role: ['deployer'], publicBody: 'yes' }, cls: { p1: 'no', p2: 'no', p3: 'no', p4: 'no', p5: 'no', p6: 'no', p7: 'no', p8: 'no', a3: { h_edu: true }, profiling: 'yes' } }).fria);
+});
+
+test('every NIST AI RMF subcategory is evidenced by a control, and every reference is a real subcategory', async () => {
+  const { NIST_SUBCATEGORIES, unmappedSubcategories, nistRefs, validNistRef, nistCoverage } = await import('../src/lib/nist');
+  assert.equal(NIST_SUBCATEGORIES.length, 72);
+  assert.deepEqual(unmappedSubcategories(), []);
+  for (const c of CONTROLS) for (const r of nistRefs(c)) assert.ok(validNistRef(r), `${c.id}: ${r}`);
+  const cov = nistCoverage({ profile: { role: ['provider'] }, cls: { ...noPro, a3: { h_credit: true }, profiling: 'yes' }, ctrl: { 'TEC-4': { s: 'met' } } });
+  assert.equal(cov.rows.find(r => r.id === 'MEASURE 2.7')?.status, 'met');
+  assert.equal(cov.rows.find(r => r.id === 'MEASURE 2.12')?.status, 'notApplicable');
+  assert.equal(cov.byFn.reduce((a, f) => a + f.total, 0), 72);
+});

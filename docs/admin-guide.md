@@ -110,12 +110,12 @@ There are three independent ways to use the platform with Orchestrate. Use any c
 
 ### 1. Register the agents (A2A)
 
-The platform publishes a main agent and seven specialists over A2A 0.3.0:
+The platform publishes a main agent and six specialists over A2A 0.3.0 (a seventh, the model researcher, only when outside research is switched on with `AGENT_EXTERNAL_RESEARCH=on`):
 
 | Agent | Endpoint |
 | --- | --- |
 | Main agent (coordinator) | `<address>/api/a2a`, card at `/.well-known/agent-card.json` |
-| Evidence reader, model researcher, risk classifier, controls assessor, documentation writer, conformity writer, source checker | `<address>/api/a2a/agents/<specialist>` |
+| Evidence reader, risk classifier, controls assessor, documentation writer, conformity writer, source checker | `<address>/api/a2a/agents/<specialist>` |
 
 1. Create a client API key (see *Clients and people*).
 2. In Orchestrate, add each as an **external A2A agent** (protocol 0.3.0) with the key as bearer token. The ready-made ADK files are in the repository under `ibm/` and `ibm/specialists/`; put the key in Orchestrate's connection, not in the files.

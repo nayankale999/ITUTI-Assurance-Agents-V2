@@ -24,6 +24,7 @@ export const CONF_QUESTIONS: ConfQuestion[] = [
   { id: 'O3', part: 'org', topic: 'Governance structure', q: 'Describe the governance structure for AI: committees, roles, decision rights and how issues are escalated.', why: 'An accountability framework that sets out who decides and who answers for AI is part of the quality management system.', ref: 'Art. 17(1)(m); Art. 26(2)' },
   { id: 'O4', part: 'org', topic: 'Quality management system', q: 'Which quality management system covers AI: design control, testing, change management, data management, record-keeping and post-market monitoring?', why: 'Providers of high-risk systems must run a documented quality management system; it is one of the things a conformity assessment examines.', ref: 'Art. 17; Annex VI(3)' },
   { id: 'O5', part: 'org', topic: 'Suppliers and third parties', q: 'How do you assess and contract with suppliers of AI models, data and components, including rights to documentation, change notices and incident information?', why: 'Responsibilities pass along the value chain: you need the supplier information to meet your own obligations.', ref: 'Art. 25' },
+  { id: 'O6', part: 'org', topic: 'Records and authorities', q: 'How long are the technical documentation, quality management records, declaration of conformity and logs kept, and how would you provide them to a market surveillance authority on request?', why: 'Providers keep the documentation for 10 years and logs for at least six months, and must cooperate with competent authorities.', ref: 'Art. 18; Art. 19; Art. 21' },
   // Project
   { id: 'P1', part: 'project', topic: 'Intended purpose', q: 'What is the system’s intended purpose and the business objective it serves? Include the decisions or tasks it supports.', why: 'Every obligation is judged against the intended purpose stated by the provider; it also decides the risk tier.', ref: 'Art. 3(12); Annex IV(1)(a)' },
   { id: 'P2', part: 'project', topic: 'Users', q: 'Who uses the system or its outputs, and what competence and training do they need?', why: 'Instructions for use and oversight must fit the people who actually operate the system.', ref: 'Art. 13(3); Art. 26(2)' },
@@ -43,6 +44,8 @@ export const CONF_QUESTIONS: ConfQuestion[] = [
   { id: 'P16', part: 'project', topic: 'Stakeholders', q: 'Which stakeholders were consulted (users, affected groups, experts, works councils) and what changed as a result?', why: 'Engaging those affected is good evidence that risks to them were properly understood.', ref: 'Art. 27; Recital 64' },
   { id: 'P17', part: 'project', topic: 'Record-keeping', q: 'Which events are logged automatically, for how long are the logs kept, and who can access them?', why: 'Automatic logs make outputs traceable and incidents investigable; deployers must keep them for at least six months.', ref: 'Art. 12; Art. 19; Art. 26(6)' },
   { id: 'P18', part: 'project', topic: 'Post-market monitoring', q: 'How is the system monitored after release, and how are serious incidents identified and reported to the authority in time?', why: 'Post-market monitoring and serious-incident reporting continue for the system’s whole life.', ref: 'Art. 72; Art. 73' },
+  { id: 'P19', part: 'project', topic: 'Role in the value chain', q: 'What is your organisation’s role for this system (provider, deployer, importer, distributor, authorised representative), and has anything been done that could make you its provider: your name or trademark on it, a substantial modification, or a new intended purpose?', why: 'Obligations follow the role, and a deployer or distributor that rebrands, substantially modifies or repurposes a high-risk system becomes its provider.', ref: 'Art. 3(3)-(7); Art. 22–25' },
+  { id: 'P20', part: 'project', topic: 'Corrective action', q: 'If the system is found not to conform or to present a risk, how would you correct, withdraw, disable or recall it, and whom would you inform?', why: 'Providers must act at once on non-conformity and inform the others in the value chain and, where there is a risk, the authorities.', ref: 'Art. 20; Art. 79' },
   // Technical
   { id: 'T1', part: 'tech', topic: 'Model and architecture', q: 'Describe the model type, architecture and how the system’s components fit together.', why: 'Annex IV asks for a general description of the system and its design.', ref: 'Annex IV(1)-(2)(b)' },
   { id: 'T2', part: 'tech', topic: 'Third-party components', q: 'Which pre-trained models, tools or components from third parties are used, in which versions, and how were they assessed?', why: 'Components from others, including general-purpose models, must be identified and their limits understood.', ref: 'Annex IV(2)(a); Art. 25(4)' },
@@ -90,6 +93,7 @@ export function prefill(sys: AssessmentData, id: string): { t: string; from: str
     case 'O2': return pick('Controls', c('GOV-4'));
     case 'O3': return pick('Profile and controls', p.owner && `Accountable owner: ${p.owner}`, c('GOV-2'));
     case 'O4': return pick('Controls', c('GOV-6'), c('DOC-3'));
+    case 'O6': return pick('Controls', c('CNF-4'));
     case 'O5': return pick('Profile and controls', p.vendor && `Third-party model or product: ${p.vendor}`, c('GOV-5'));
     case 'P1': return pick('Profile and model card', card('purpose') || p.description, p.func && `Business function: ${opt('func', p.func)}`);
     case 'P2': return pick('Model card', card('users'));
@@ -111,6 +115,11 @@ export function prefill(sys: AssessmentData, id: string): { t: string; from: str
       const tx = TRANSPARENCY.filter(([k]) => sys.cls?.t?.[k]).map(([, t, ref]) => `${t} (${ref})`);
       return pick('Classification and controls', tx.length && `Transparency triggers: ${tx.join('; ')}`, c('TXP-1'), c('TXP-2'));
     }
+    case 'P19': {
+      const roles = (p.role || []) as string[];
+      return pick('Profile and controls', roles.length && `Role: ${roles.map(x => opt('role', x)).join(', ')}`, p.established && `Provider established: ${opt('established', p.established)}`, c('GOV-7'), c('CNF-5'), c('CNF-6'));
+    }
+    case 'P20': return pick('Controls', c('MON-5'));
     case 'P17': return pick('Controls', c('DOC-2'));
     case 'P18': return pick('Controls', c('MON-1'), c('MON-2'), c('MON-3'));
     case 'T1': return pick('Profile and model card', (p.aiType || []).length && `Type of AI: ${(p.aiType as string[]).map(x => opt('aiType', x)).join(', ')}`, card('model'));

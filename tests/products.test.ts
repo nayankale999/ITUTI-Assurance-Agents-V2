@@ -16,11 +16,11 @@ const hr: AssessmentData = {
   card: { users: 'Recruiters' }, metrics: [{ id: 'm', name: 'Precision at 20', threshold: 0.65, dir: 'above', readings: [{ d: '2026-09-30', v: 0.7 }] }],
 };
 
-test('conformity questions have unique ids, 5/18/15 per part, and the generative question only for generative systems', () => {
+test('conformity questions have unique ids, 6/20/15 per part, and the generative question only for generative systems', () => {
   assert.equal(new Set(CONF_QUESTIONS.map(q => q.id)).size, CONF_QUESTIONS.length);
-  assert.deepEqual(['org', 'project', 'tech'].map(p => CONF_QUESTIONS.filter(q => q.part === p).length), [5, 18, 15]);
-  assert.equal(questionsFor(hr).length, 37);
-  assert.equal(questionsFor({ ...hr, profile: { ...hr.profile, aiType: ['genai'] } }).length, 38);
+  assert.deepEqual(['org', 'project', 'tech'].map(p => CONF_QUESTIONS.filter(q => q.part === p).length), [6, 20, 15]);
+  assert.equal(questionsFor(hr).length, 40);
+  assert.equal(questionsFor({ ...hr, profile: { ...hr.profile, aiType: ['genai'] } }).length, 41);
 });
 
 test('answers recorded elsewhere pre-fill the conformity questions and need confirming', () => {

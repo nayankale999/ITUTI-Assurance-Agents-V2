@@ -2,7 +2,8 @@
  * Paths:
  *   profile.<key>              text, or an option key (select), or a list of option keys (multi)
  *   cls.p1 … cls.p8            'no' | 'yes' | 'unsure'          prohibited-practice screens
- *   cls.annex1|profiling|exempt|gpai   'no' | 'yes'
+ *   cls.def                    'no' | 'yes' | 'unsure'          meets the AI system definition (Art. 3(1))
+ *   cls.excl|annex1|profiling|exempt|gpai|gpaiSys   'no' | 'yes'
  *   cls.a3.<area>, cls.t.<k>   true | false                     Annex III areas, transparency triggers
  *   ctrl.<CONTROL-ID>          { s: 'met'|'partial'|'gap'|'na', e: evidence text }
  *   card.<key>                 text                             model card
@@ -26,6 +27,8 @@ export function fieldCatalogue(): Field[] {
   for (const s of PROFILE_SECTIONS) for (const f of s.fields) {
     out.push({ path: `profile.${f.k}`, label: f.label, section: 'profile', kind: f.type === 'select' ? 'select' : f.type === 'multi' ? 'multi' : 'text', opts: f.opts ? OPTS[f.opts] : undefined, help: f.hint });
   }
+  out.push({ path: 'cls.def', label: 'Art. 3(1): the system is an AI system as the Act defines it (machine-based, infers from inputs how to generate outputs such as predictions, content, recommendations or decisions, with some autonomy)', section: 'cls', kind: 'ynu' });
+  out.push({ path: 'cls.excl', label: 'Art. 2: an exclusion applies (only military, defence or national security; only scientific research and development; research or testing before release outside real-world conditions; purely personal non-professional use)', section: 'cls', kind: 'yn' });
   for (const [k, t, ref] of PROHIBITED) out.push({ path: `cls.${k}`, label: `${ref}: ${t}`, section: 'cls', kind: 'ynu' });
   for (const [k, t, ref] of ANNEX3) out.push({ path: `cls.a3.${k}`, label: `High-risk area, ${ref}: ${t}`, section: 'cls', kind: 'bool' });
   out.push({ path: 'cls.annex1', label: 'Art. 6(1): safety component of, or itself, a product under EU product-safety law (Annex I)', section: 'cls', kind: 'yn' });
@@ -33,6 +36,7 @@ export function fieldCatalogue(): Field[] {
   out.push({ path: 'cls.exempt', label: 'Art. 6(3) exemption: only a narrow procedural task, improves a completed human activity, detects patterns without replacing human assessment, or prepares an assessment', section: 'cls', kind: 'yn' });
   for (const [k, t, ref] of TRANSPARENCY) out.push({ path: `cls.t.${k}`, label: `Transparency trigger, ${ref}: ${t}`, section: 'cls', kind: 'bool' });
   out.push({ path: 'cls.gpai', label: 'Art. 51–55: the organisation places a general-purpose AI model on the market (not only uses one)', section: 'cls', kind: 'yn' });
+  out.push({ path: 'cls.gpaiSys', label: 'Art. 51: that general-purpose model has systemic risk (high-impact capabilities, presumed above 10^25 training FLOPs, or designated by the Commission)', section: 'cls', kind: 'yn' });
   const area = Object.fromEntries(AREAS);
   for (const c of CONTROLS) out.push({ path: `ctrl.${c.id}`, label: `${c.id} (${area[c.a]}): ${c.q}`, section: 'ctrl', kind: 'control', help: `Expected evidence: ${c.ev}` });
   for (const [k, l] of CARD_FIELDS) out.push({ path: `card.${k}`, label: `Model card: ${l}`, section: 'card', kind: 'text' });

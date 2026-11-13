@@ -10,7 +10,7 @@ const filled = (v: unknown) => (Array.isArray(v) ? v.length > 0 : v != null && S
 export const INVENTORY_KEYS = ['name', 'owner', 'team', 'description', 'lifecycle', 'func', 'regions', 'role', 'aiType', 'affects', 'personal'];
 
 /** Profile answers that decide the classification: when one changes after it was confirmed, the system needs reassessing. */
-export const CONTEXT_KEYS = ['description', 'func', 'sector', 'regions', 'role', 'aiType', 'source', 'vendor', 'affects', 'personal', 'scale', 'autonomy', 'dataSources'];
+export const CONTEXT_KEYS = ['description', 'func', 'sector', 'regions', 'role', 'aiType', 'source', 'vendor', 'affects', 'personal', 'scale', 'autonomy', 'dataSources', 'established', 'publicBody', 'vulnerable'];
 const label = (k: string) => PROFILE_SECTIONS.flatMap(s => s.fields).find(f => f.k === k)?.label || k;
 
 export function contextSnapshot(sys: AssessmentData): string {

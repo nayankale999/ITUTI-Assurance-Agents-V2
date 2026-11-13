@@ -2,7 +2,7 @@
    Used by both the server (to compute stored summaries) and the browser editor. */
 
 export type FrameworkKey = 'eu' | 'uk' | 'iso' | 'nist';
-export type Ctx = { high: boolean; provider: boolean; deployer: boolean; genai: boolean; agent: boolean; vendor: boolean; personal: boolean; people: boolean; fs: boolean; fsCust: boolean; t1: boolean; t2: boolean };
+export type Ctx = { high: boolean; provider: boolean; deployer: boolean; importer: boolean; distributor: boolean; needsRep: boolean; publicBody: boolean; workplace: boolean; gpai: boolean; gpaiSys: boolean; genai: boolean; agent: boolean; vendor: boolean; personal: boolean; people: boolean; fs: boolean; fsCust: boolean; t1: boolean; t2: boolean };
 export type Control = { id: string; a: string; q: string; ev: string; eu: string; uk: string; iso: string; nist: string; when?: (c: Ctx) => boolean };
 export type ProfileField = { k: string; label: string; type: 'text' | 'textarea' | 'select' | 'multi'; opts?: string; hint?: string; why?: string };
 export type ProfileSection = { title: string; note?: string; fields: ProfileField[] };
@@ -37,7 +37,9 @@ export const OPTS: Record<string, [string, string][]> = {
   func: [['credit','Credit and lending decisions'],['uw','Underwriting and pricing'],['fraud','Fraud and financial crime'],['service','Customer service'],['marketing','Marketing and sales'],['hr','HR and recruitment'],['ops','Operations'],['risk','Risk and compliance'],['it','IT and engineering'],['other','Other']],
   aiType: [['ml','Predictive or machine-learning model'],['genai','Generative AI or LLM'],['agent','Agentic workflow (takes actions)'],['vision','Computer vision or biometrics'],['rules','Rules plus ML hybrid']],
   source: [['inhouse','Built in-house'],['vendor','Vendor product'],['foundation','Built on a third-party foundation model'],['oss','Open-source model, adapted in-house']],
-  role: [['provider','Provider: we develop it or put our name on it'],['deployer','Deployer: we use it under our authority'],['importer','Importer'],['distributor','Distributor']],
+  role: [['provider','Provider: we develop it or put our name on it'],['deployer','Deployer: we use it under our authority'],['importer','Importer'],['distributor','Distributor'],['authrep','Authorised representative of a non-EU provider'],['manufacturer','Product manufacturer: it is part of our product']],
+  established: [['eu','In the EU'],['noneu','Outside the EU']],
+  yesno: [['no','No'],['yes','Yes']],
   affects: [['no','No direct effect on individuals'],['staff','Employees or job applicants'],['cust','Customers'],['public','Members of the public']],
   personal: [['none','No personal data'],['personal','Personal data'],['special','Special category or biometric data']],
   scale: [['s0','Fewer than 1,000 people a year'],['s1','1,000 to 100,000'],['s2','100,000 to 1 million'],['s3','More than 1 million']],
@@ -58,7 +60,9 @@ export const PROFILE_SECTIONS: ProfileSection[] = [
     { k:'regions', label:'Where it is used or its outputs take effect', type:'multi', opts:'regions', why:'The EU AI Act applies when the system or its outputs are used in the EU, wherever it is built (Art. 2).' },
     { k:'sector', label:'Sector', type:'select', opts:'sector', why:'Sector decides which supervisors and rules apply alongside the AI Act, such as the FCA, PRA or insurance rules.' },
     { k:'func', label:'Business function', type:'select', opts:'func', why:'Some functions, such as credit, recruitment and insurance pricing, fall under Annex III and are presumed high-risk.' },
-    { k:'role', label:'Your organisation’s role', type:'multi', opts:'role', hint:'Determines provider versus deployer obligations under the EU AI Act', why:'Providers carry the conformity assessment; deployers carry duties of use, oversight and monitoring (Art. 16, Art. 26).' },
+    { k:'role', label:'Your organisation’s role', type:'multi', opts:'role', hint:'Determines provider versus deployer obligations under the EU AI Act', why:'Providers carry the conformity assessment; deployers carry duties of use, oversight and monitoring; importers, distributors and authorised representatives have their own checks (Art. 16, 22–26). A product manufacturer that places the system on the market with its product is its provider (Art. 25(3)).' },
+    { k:'established', label:'Where the provider is established', type:'select', opts:'established', why:'A provider established outside the EU must appoint an authorised representative in the EU before making a high-risk system available there (Art. 22).' },
+    { k:'publicBody', label:'Public body, or a private body providing public services', type:'select', opts:'yesno', hint:'For example a public authority, or a private company running an essential public service', why:'These deployers must assess the impact on fundamental rights before using a high-risk system and register their use in the EU database (Art. 27, Art. 26(8), Art. 49(3)).' },
   ]},
   { title: 'Technology and data', fields: [
     { k:'aiType', label:'Type of AI', type:'multi', opts:'aiType', why:'Generative and agentic systems bring extra risks and controls, such as hallucination testing and action limits.' },
@@ -68,7 +72,8 @@ export const PROFILE_SECTIONS: ProfileSection[] = [
     { k:'dataSources', label:'Data sources and categories', type:'textarea', hint:'Where training and input data come from, and what kinds of data they hold', why:'Data governance obligations start from knowing each source and what it contains (Art. 10).' },
   ]},
   { title: 'Impact factors', note:'These answers drive the inherent risk score.', fields: [
-    { k:'affects', label:'Who is affected by its outputs', type:'select', opts:'affects', why:'Effects on employees, customers or the public raise the stakes and bring fundamental-rights duties.' },
+    { k:'affects', label:'Who is affected by its outputs', type:'select', opts:'affects', why:'Effects on employees, customers or the public raise the stakes and bring fundamental-rights duties. Using a high-risk system at the workplace also means telling workers first (Art. 26(7)).' },
+    { k:'vulnerable', label:'Affects children or other vulnerable groups', type:'select', opts:'yesno', why:'Risk management must consider whether the system is likely to affect people under 18 or other vulnerable groups (Art. 9(9)).' },
     { k:'personal', label:'Data processed', type:'select', opts:'personal', why:'Personal and special category data bring GDPR duties and raise the potential for harm.' },
     { k:'scale', label:'People affected each year', type:'select', opts:'scale', why:'The more people affected, the greater the impact of a systematic error.' },
     { k:'autonomy', label:'Degree of automation', type:'select', opts:'autonomy', why:'The less a person reviews each outcome, the more the controls and oversight design have to carry.' },
@@ -119,56 +124,73 @@ export const AREAS: [string, string][] = [
   ['tech','Accuracy, robustness and security'],
   ['mon','Monitoring and incidents'],
   ['conf','EU conformity and registration'],
+  ['gpai','General-purpose AI models'],
 ];
 
 export const CONTROLS: Control[] = [
-  { id:'GOV-1', a:'gov', q:'A board-approved AI policy sets the principles, risk appetite and prohibited uses that apply to this system.', ev:'Policy document, approval minutes, date of last review.', eu:'Art. 17', uk:'Accountability and governance', iso:'5.2, A.2', nist:'GOVERN 1' },
-  { id:'GOV-2', a:'gov', q:'A named senior individual is accountable for this system’s outcomes and has authority to suspend it.', ev:'Responsibilities map, SM&CR statement of responsibilities where relevant.', eu:'Art. 26(2)', uk:'Accountability; SM&CR', iso:'5.3, A.3', nist:'GOVERN 2' },
-  { id:'GOV-3', a:'gov', q:'The system is recorded in the AI inventory with its risk classification, and the rationale is documented and reviewed on a set cycle.', ev:'Inventory entry, classification rationale, review date.', eu:'Art. 6(4), Art. 49', uk:'SS1/23 Principle 1', iso:'6.1, A.5', nist:'MAP 1' },
-  { id:'GOV-4', a:'gov', q:'People who build, operate or oversee the system have role-appropriate AI literacy training.', ev:'Training records, curriculum, completion rates.', eu:'Art. 4', uk:'Accountability and governance', iso:'7.2, A.4', nist:'GOVERN 2' },
-  { id:'GOV-5', a:'gov', when:(c: Ctx)=>c.vendor, q:'Vendors and foundation-model providers are assessed, with contractual rights to documentation, change notices and incident information.', ev:'Due diligence file, contract clauses, vendor risk rating.', eu:'Art. 25', uk:'Outsourcing and third-party risk (SS2/21)', iso:'A.10', nist:'GOVERN 6' },
-  { id:'GOV-6', a:'gov', when:(c: Ctx)=>c.high, q:'A documented quality management system covers design, testing, change control, data management and post-market monitoring for this system.', ev:'QMS procedures, process owners, audit results.', eu:'Art. 17', uk:'SS1/23 Principle 2', iso:'Clauses 4–10', nist:'GOVERN 4' },
+  { id:'GOV-1', a:'gov', q:'A board-approved AI policy sets the principles, risk appetite and prohibited uses that apply to this system.', ev:'Policy document, approval minutes, date of last review.', eu:'Art. 17', uk:'Accountability and governance', iso:'5.2, A.2', nist:'GOVERN 1.1, GOVERN 1.2, GOVERN 1.3, GOVERN 1.4, GOVERN 4.1, MAP 1.3, MAP 1.5' },
+  { id:'GOV-2', a:'gov', q:'A named senior individual is accountable for this system’s outcomes and has authority to suspend it.', ev:'Responsibilities map, SM&CR statement of responsibilities where relevant.', eu:'Art. 26(2)', uk:'Accountability; SM&CR', iso:'5.3, A.3', nist:'GOVERN 2.1, GOVERN 2.3' },
+  { id:'GOV-3', a:'gov', q:'The system is recorded in the AI inventory with its risk classification, and the rationale is documented and reviewed on a set cycle.', ev:'Inventory entry, classification rationale, review date.', eu:'Art. 6(4), Art. 49', uk:'SS1/23 Principle 1', iso:'6.1, A.5', nist:'GOVERN 1.5, GOVERN 1.6, MAP 1.1' },
+  { id:'GOV-4', a:'gov', q:'People who build, operate or oversee the system have role-appropriate AI literacy training.', ev:'Training records, curriculum, completion rates.', eu:'Art. 4', uk:'Accountability and governance', iso:'7.2, A.4', nist:'GOVERN 2.2, MAP 3.4' },
+  { id:'GOV-5', a:'gov', when:(c: Ctx)=>c.vendor, q:'Vendors and foundation-model providers are assessed, with contractual rights to documentation, change notices and incident information.', ev:'Due diligence file, contract clauses, vendor risk rating.', eu:'Art. 25', uk:'Outsourcing and third-party risk (SS2/21)', iso:'A.10', nist:'GOVERN 6.1, GOVERN 6.2, MAP 4.1, MAP 4.2, MANAGE 3.1, MANAGE 3.2' },
+  { id:'GOV-7', a:'gov', when:(c: Ctx)=>c.deployer||c.importer||c.distributor, q:'Changes that would make the organisation the provider of this system (putting its name or trademark on it, a substantial modification, or a new intended purpose that makes it high-risk) are identified and assessed before they are made.', ev:'Change assessment procedure, Art. 25 decision records.', eu:'Art. 25(1)-(2)', uk:'Accountability and governance', iso:'6.3, A.10', nist:'GOVERN 6.1, MAP 4.1' },
+  { id:'GOV-8', a:'gov', q:'Decisions about the system’s context, risks and safeguards draw on people with diverse expertise and perspectives (business, technical, risk, legal and compliance, and affected users where relevant), and on experts independent of its development.', ev:'Review forum membership, sign-off records, record of independent and user input.', eu:'', uk:'Accountability and governance', iso:'5.3, 7.2', nist:'GOVERN 3.1, MAP 1.2, MAP 1.6, MEASURE 1.3, MEASURE 4.1' },
+  { id:'GOV-6', a:'gov', when:(c: Ctx)=>c.high, q:'A documented quality management system covers design, testing, change control, data management and post-market monitoring for this system.', ev:'QMS procedures, process owners, audit results.', eu:'Art. 17', uk:'SS1/23 Principle 2', iso:'Clauses 4–10', nist:'GOVERN 1.4, GOVERN 1.5, GOVERN 4.3' },
 
-  { id:'RSK-1', a:'risk', q:'Risks to health, safety and fundamental rights are identified, estimated and treated across the lifecycle, and re-assessed after material changes.', ev:'Risk register entries, treatment plans, residual risk sign-off.', eu:'Art. 9', uk:'Safety, security and robustness', iso:'6.1.2, 6.1.3', nist:'MAP 4, MANAGE 1' },
-  { id:'RSK-2', a:'risk', when:(c: Ctx)=>c.people, q:'An impact assessment covers effects on the people and groups affected, including fundamental rights where relevant.', ev:'Impact assessment, or fundamental rights impact assessment where Art. 27 applies.', eu:'Art. 27', uk:'Fairness', iso:'6.1.4, A.5', nist:'MAP 5' },
-  { id:'RSK-3', a:'risk', when:(c: Ctx)=>c.personal, q:'A data protection impact assessment is complete and its mitigations are implemented.', ev:'DPIA, DPO sign-off, mitigation tracker.', eu:'Art. 26(9); GDPR Art. 35', uk:'UK GDPR Art. 35', iso:'A.5, A.7', nist:'MAP 5' },
-  { id:'RSK-4', a:'risk', q:'Intended purpose, out-of-scope uses and reasonably foreseeable misuse are documented and communicated to users.', ev:'Use-case statement, user guidance, misuse scenarios.', eu:'Art. 9(2)(b), Art. 13', uk:'Transparency and explainability', iso:'A.9', nist:'MAP 1' },
-  { id:'RSK-5', a:'risk', when:(c: Ctx)=>c.fsCust, q:'Outcomes for customers, including those with characteristics of vulnerability, are monitored and evidence good outcomes and fair value.', ev:'Outcome MI, vulnerable-customer analysis, Consumer Duty board report.', eu:'Art. 9(9)', uk:'FCA Consumer Duty (PRIN 2A)', iso:'A.5', nist:'MEASURE 2.11' },
+  { id:'RSK-1', a:'risk', q:'Risks to health, safety and fundamental rights are identified, estimated and treated across the lifecycle, and re-assessed after material changes.', ev:'Risk register entries, treatment plans, residual risk sign-off.', eu:'Art. 9', uk:'Safety, security and robustness', iso:'6.1.2, 6.1.3', nist:'MAP 3.1, MAP 3.2, MAP 5.1, MANAGE 1.1, MANAGE 1.2, MANAGE 1.3, MANAGE 1.4, MANAGE 2.1' },
+  { id:'RSK-2', a:'risk', when:(c: Ctx)=>c.people, q:'An impact assessment covers effects on the people and groups affected, including fundamental rights where relevant.', ev:'Impact assessment, or fundamental rights impact assessment where Art. 27 applies.', eu:'Art. 27', uk:'Fairness', iso:'6.1.4, A.5', nist:'MAP 5.1, MAP 5.2, GOVERN 5.1' },
+  { id:'RSK-3', a:'risk', when:(c: Ctx)=>c.personal, q:'A data protection impact assessment is complete and its mitigations are implemented.', ev:'DPIA, DPO sign-off, mitigation tracker.', eu:'Art. 26(9); GDPR Art. 35', uk:'UK GDPR Art. 35', iso:'A.5, A.7', nist:'MEASURE 2.10' },
+  { id:'RSK-4', a:'risk', q:'Intended purpose, out-of-scope uses and reasonably foreseeable misuse are documented and communicated to users.', ev:'Use-case statement, user guidance, misuse scenarios.', eu:'Art. 9(2)(b), Art. 13', uk:'Transparency and explainability', iso:'A.9', nist:'MAP 1.1, MAP 1.4, MAP 2.1, MAP 3.3' },
+  { id:'RSK-5', a:'risk', when:(c: Ctx)=>c.fsCust, q:'Outcomes for customers, including those with characteristics of vulnerability, are monitored and evidence good outcomes and fair value.', ev:'Outcome MI, vulnerable-customer analysis, Consumer Duty board report.', eu:'Art. 9(9)', uk:'FCA Consumer Duty (PRIN 2A)', iso:'A.5', nist:'MEASURE 2.11, MEASURE 4.3' },
 
-  { id:'DAT-1', a:'data', q:'Training, validation and test data are documented: sources, collection, labelling, cleaning and known gaps.', ev:'Data sheets, lineage diagrams, data dictionary.', eu:'Art. 10(2)', uk:'SS1/23 Principle 3', iso:'A.7', nist:'MAP 2' },
-  { id:'DAT-2', a:'data', q:'Data is checked to be relevant, representative and as complete and error-free as possible for the intended population.', ev:'Data quality report, representativeness analysis.', eu:'Art. 10(3)', uk:'Safety, security and robustness', iso:'A.7', nist:'MEASURE 2' },
+  { id:'DAT-1', a:'data', q:'Training, validation and test data are documented: sources, collection, labelling, cleaning and known gaps.', ev:'Data sheets, lineage diagrams, data dictionary.', eu:'Art. 10(2)', uk:'SS1/23 Principle 3', iso:'A.7', nist:'MAP 2.3, MEASURE 2.1' },
+  { id:'DAT-2', a:'data', q:'Data is checked to be relevant, representative and as complete and error-free as possible for the intended population; as a deployer, input data under your control is relevant and sufficiently representative.', ev:'Data quality report, representativeness analysis, input data checks.', eu:'Art. 10(3), Art. 26(4)', uk:'Safety, security and robustness', iso:'A.7', nist:'MAP 2.3, MEASURE 2.2' },
   { id:'DAT-3', a:'data', when:(c: Ctx)=>c.people, q:'Data and outputs are examined for bias likely to affect protected groups, with mitigations recorded.', ev:'Bias testing results by group, mitigation decisions.', eu:'Art. 10(2)(f)-(g)', uk:'Fairness; Equality Act 2010', iso:'A.5, A.7', nist:'MEASURE 2.11' },
-  { id:'DAT-4', a:'data', when:(c: Ctx)=>c.personal, q:'Lawful basis, minimisation and retention are documented for all personal data, including data used for training.', ev:'Record of processing, retention schedule, lawful basis assessment.', eu:'GDPR Art. 5–6', uk:'UK GDPR', iso:'A.7', nist:'GOVERN 1' },
-  { id:'DAT-5', a:'data', when:(c: Ctx)=>c.genai||c.vendor, q:'Rights to use training data and model components are confirmed, including licences and copyright.', ev:'Licence register, vendor warranties, copyright review.', eu:'Art. 53(1)(c)', uk:'Accountability and governance', iso:'A.7', nist:'GOVERN 6' },
+  { id:'DAT-4', a:'data', when:(c: Ctx)=>c.personal, q:'Lawful basis, minimisation and retention are documented for all personal data, including data used for training.', ev:'Record of processing, retention schedule, lawful basis assessment.', eu:'GDPR Art. 5–6', uk:'UK GDPR', iso:'A.7', nist:'GOVERN 1.1, MEASURE 2.10' },
+  { id:'DAT-5', a:'data', when:(c: Ctx)=>c.genai||c.vendor, q:'Rights to use training data and model components are confirmed, including licences and copyright.', ev:'Licence register, vendor warranties, copyright review.', eu:'Art. 53(1)(c)', uk:'Accountability and governance', iso:'A.7', nist:'GOVERN 6.1, MAP 4.1' },
 
-  { id:'DOC-1', a:'doc', when:(c: Ctx)=>c.high, q:'Technical documentation describes design, architecture, model choice, training approach, performance and limitations, and is kept current.', ev:'Technical file following Annex IV headings.', eu:'Art. 11, Annex IV', uk:'SS1/23 Principle 3', iso:'A.6', nist:'MAP 2' },
-  { id:'DOC-2', a:'doc', q:'Events needed to trace outputs and investigate incidents are logged automatically, with defined retention.', ev:'Logging specification, sample logs, retention setting.', eu:'Art. 12, Art. 26(6)', uk:'Accountability and governance', iso:'A.6', nist:'MANAGE 4' },
-  { id:'DOC-3', a:'doc', q:'Model and system versions are controlled, and material changes trigger re-validation and, where needed, re-assessment.', ev:'Change log, release approvals, re-validation evidence.', eu:'Art. 43(4)', uk:'SS1/23 Principle 3', iso:'6.3, A.6', nist:'MANAGE 2' },
+  { id:'DOC-1', a:'doc', when:(c: Ctx)=>c.high, q:'Technical documentation describes design, architecture, model choice, training approach, performance and limitations, and is kept current.', ev:'Technical file following Annex IV headings.', eu:'Art. 11, Annex IV', uk:'SS1/23 Principle 3', iso:'A.6', nist:'GOVERN 4.2, MAP 2.1, MAP 2.2, MAP 2.3' },
+  { id:'DOC-2', a:'doc', q:'Events needed to trace outputs and investigate incidents are logged automatically, with defined retention.', ev:'Logging specification, sample logs, retention setting.', eu:'Art. 12, Art. 26(6)', uk:'Accountability and governance', iso:'A.6', nist:'MEASURE 2.8' },
+  { id:'DOC-3', a:'doc', q:'Model and system versions are controlled, and material changes trigger re-validation and, where needed, re-assessment.', ev:'Change log, release approvals, re-validation evidence.', eu:'Art. 43(4)', uk:'SS1/23 Principle 3', iso:'6.3, A.6', nist:'MANAGE 4.2' },
 
-  { id:'TXP-1', a:'tx', when:(c: Ctx)=>c.high&&c.provider, q:'Deployers receive instructions for use covering purpose, accuracy, limitations, oversight measures and maintenance.', ev:'Instructions for use document.', eu:'Art. 13', uk:'Transparency and explainability', iso:'A.8', nist:'GOVERN 4' },
-  { id:'TXP-2', a:'tx', when:(c: Ctx)=>c.people||c.t1||c.t2, q:'People are told in clear language when they interact with AI, are subject to an AI-assisted decision, or see AI-generated content.', ev:'Customer notices, UI copy, content labels.', eu:'Art. 26(11), Art. 50', uk:'Transparency and explainability', iso:'A.8', nist:'GOVERN 4' },
+  { id:'TXP-1', a:'tx', when:(c: Ctx)=>c.high&&c.provider, q:'Deployers receive instructions for use covering purpose, accuracy, limitations, oversight measures and maintenance.', ev:'Instructions for use document.', eu:'Art. 13', uk:'Transparency and explainability', iso:'A.8', nist:'GOVERN 4.2, MAP 2.2, MANAGE 1.4' },
+  { id:'TXP-2', a:'tx', when:(c: Ctx)=>c.people||c.t1||c.t2, q:'People are told in clear language when they interact with AI, are subject to an AI-assisted decision, or see AI-generated content.', ev:'Customer notices, UI copy, content labels.', eu:'Art. 26(11), Art. 50', uk:'Transparency and explainability', iso:'A.8', nist:'MEASURE 2.8' },
   { id:'TXP-3', a:'tx', when:(c: Ctx)=>c.people, q:'Individuals can obtain a meaningful explanation of decisions that affect them.', ev:'Explanation method, sample explanations, adverse-action reasons.', eu:'Art. 86', uk:'Transparency; UK GDPR automated decision-making rules', iso:'A.8', nist:'MEASURE 2.9' },
-  { id:'TXP-4', a:'tx', q:'A model card summarises purpose, data, performance, fairness, limitations and contacts, and is kept with the inventory record.', ev:'Model card (generated in this tool).', eu:'Art. 11, Art. 13', uk:'Transparency and explainability', iso:'A.6, A.8', nist:'MAP 2' },
+  { id:'TXP-4', a:'tx', q:'A model card summarises purpose, data, performance, fairness, limitations and contacts, and is kept with the inventory record.', ev:'Model card (generated in this tool).', eu:'Art. 11, Art. 13', uk:'Transparency and explainability', iso:'A.6, A.8', nist:'GOVERN 4.2, MAP 2.2' },
 
-  { id:'HUM-1', a:'hum', q:'Human oversight is designed in: overseers understand capabilities and limits, watch for automation bias, and can override outputs.', ev:'Oversight procedure, overseer training, override statistics.', eu:'Art. 14, Art. 26(2)', uk:'Accountability and governance', iso:'A.9', nist:'MANAGE 2' },
-  { id:'HUM-2', a:'hum', q:'Overseers can halt the system safely through a stop control or fallback process, and the fallback has been tested.', ev:'Runbook, kill-switch test record.', eu:'Art. 14(4)(e)', uk:'Safety, security and robustness', iso:'A.9', nist:'MANAGE 2.4' },
-  { id:'HUM-3', a:'hum', when:(c: Ctx)=>c.people, q:'Affected people can challenge outcomes and reach a human review, and complaints are tracked to resolution.', ev:'Appeals process, complaint MI, review turnaround.', eu:'Art. 85–86; GDPR Art. 22(3)', uk:'Contestability and redress; Consumer Duty', iso:'A.8', nist:'MANAGE 4' },
-  { id:'HUM-4', a:'hum', when:(c: Ctx)=>c.agent, q:'Agent permissions, tool access and spending or action limits are scoped, logged and reviewed.', ev:'Permission matrix, action limits, review log.', eu:'Art. 14, Art. 15', uk:'Accountability and governance', iso:'A.9', nist:'MANAGE 2' },
+  { id:'TXP-5', a:'tx', when:(c: Ctx)=>c.t2||c.genai, q:'Synthetic audio, images, video and text are marked in a machine-readable format and detectable as AI-generated, and deepfakes or AI text published to inform the public are disclosed.', ev:'Watermarking or metadata approach, detection test, disclosure wording.', eu:'Art. 50(2), Art. 50(4)', uk:'Transparency and explainability', iso:'A.8', nist:'MEASURE 2.8' },
+  { id:'TXP-6', a:'tx', when:(c: Ctx)=>c.high&&c.deployer&&c.workplace, q:'Workers’ representatives and the workers affected are told before a high-risk system is put into use at the workplace.', ev:'Notice to workers and their representatives, consultation record.', eu:'Art. 26(7)', uk:'Transparency; employment law consultation duties', iso:'A.8', nist:'GOVERN 5.1, MEASURE 2.8' },
 
-  { id:'TEC-1', a:'tech', q:'Performance metrics are set against a baseline with acceptance thresholds, and met on independent test data.', ev:'Validation report, test set description, threshold sign-off.', eu:'Art. 15(1)-(3)', uk:'Safety, security and robustness', iso:'A.6', nist:'MEASURE 2' },
-  { id:'TEC-2', a:'tech', when:(c: Ctx)=>c.high||c.fs, q:'An independent party, second line or external, validated the model before use and re-validates it on a set cycle.', ev:'Independent validation report, findings tracker.', eu:'Art. 43', uk:'SS1/23 Principle 4', iso:'9.2', nist:'MEASURE 1' },
-  { id:'TEC-3', a:'tech', q:'The system is tested for errors, edge cases, drift and adversarial inputs, with fail-safes in place.', ev:'Robustness test results, fail-safe design.', eu:'Art. 15(4)', uk:'Safety, security and robustness', iso:'A.6', nist:'MEASURE 2.5–2.7' },
+  { id:'HUM-1', a:'hum', q:'Human oversight is designed in: overseers understand capabilities and limits, watch for automation bias, and can override outputs.', ev:'Oversight procedure, overseer training, override statistics.', eu:'Art. 14, Art. 26(2)', uk:'Accountability and governance', iso:'A.9', nist:'GOVERN 3.2, MAP 2.2, MAP 3.5' },
+  { id:'HUM-2', a:'hum', q:'Overseers can halt the system safely through a stop control or fallback process, and the fallback has been tested.', ev:'Runbook, kill-switch test record.', eu:'Art. 14(4)(e)', uk:'Safety, security and robustness', iso:'A.9', nist:'MANAGE 2.4, MEASURE 2.6' },
+  { id:'HUM-3', a:'hum', when:(c: Ctx)=>c.people, q:'Affected people can challenge outcomes and reach a human review, and complaints are tracked to resolution.', ev:'Appeals process, complaint MI, review turnaround.', eu:'Art. 85–86; GDPR Art. 22(3)', uk:'Contestability and redress; Consumer Duty', iso:'A.8', nist:'GOVERN 5.2, MEASURE 3.3, MANAGE 4.1' },
+  { id:'HUM-4', a:'hum', when:(c: Ctx)=>c.agent, q:'Agent permissions, tool access and spending or action limits are scoped, logged and reviewed.', ev:'Permission matrix, action limits, review log.', eu:'Art. 14, Art. 15', uk:'Accountability and governance', iso:'A.9', nist:'GOVERN 3.2, MEASURE 2.6' },
+
+  { id:'TEC-1', a:'tech', q:'Performance metrics are set against a baseline with acceptance thresholds, and met on independent test data.', ev:'Validation report, test set description, threshold sign-off.', eu:'Art. 15(1)-(3)', uk:'Safety, security and robustness', iso:'A.6', nist:'MEASURE 1.1, MEASURE 2.1, MEASURE 2.3, MEASURE 2.5' },
+  { id:'TEC-2', a:'tech', when:(c: Ctx)=>c.high||c.fs, q:'An independent party, second line or external, validated the model before use and re-validates it on a set cycle.', ev:'Independent validation report, findings tracker.', eu:'Art. 43', uk:'SS1/23 Principle 4', iso:'9.2', nist:'MEASURE 1.3, MEASURE 2.13, MEASURE 4.2, MANAGE 1.1' },
+  { id:'TEC-3', a:'tech', q:'The system is tested for errors, edge cases, drift and adversarial inputs, with fail-safes in place.', ev:'Robustness test results, fail-safe design.', eu:'Art. 15(4)', uk:'Safety, security and robustness', iso:'A.6', nist:'MEASURE 2.5, MEASURE 2.6' },
   { id:'TEC-4', a:'tech', q:'Security controls cover AI-specific threats such as data poisoning, model extraction and prompt injection.', ev:'Threat model, penetration test, security sign-off.', eu:'Art. 15(5)', uk:'DSIT AI Cyber Security Code of Practice', iso:'A.6; ISO 27001', nist:'MEASURE 2.7' },
-  { id:'TEC-5', a:'tech', when:(c: Ctx)=>c.genai, q:'Generative outputs are evaluated for hallucination, harmful content and data leakage, with guardrails and red-teaming before release.', ev:'Evaluation results, red-team report, guardrail configuration.', eu:'Art. 15, Art. 50', uk:'Safety, security and robustness', iso:'A.6', nist:'AI 600-1 GenAI Profile' },
+  { id:'TEC-5', a:'tech', when:(c: Ctx)=>c.genai, q:'Generative outputs are evaluated for hallucination, harmful content and data leakage, with guardrails and red-teaming before release.', ev:'Evaluation results, red-team report, guardrail configuration (NIST AI 600-1 Generative AI Profile).', eu:'Art. 15, Art. 50', uk:'Safety, security and robustness', iso:'A.6', nist:'MEASURE 2.3, MEASURE 2.6, MEASURE 2.7' },
 
-  { id:'MON-1', a:'mon', q:'Performance, fairness and drift are monitored in production against thresholds, with named owners and alert routes.', ev:'Monitoring dashboard, thresholds, alert history (use the Monitoring tab).', eu:'Art. 72, Art. 26(5)', uk:'SS1/23 ongoing monitoring', iso:'9.1, A.6', nist:'MEASURE 3, MANAGE 4' },
-  { id:'MON-2', a:'mon', q:'Incidents are logged, triaged by severity and investigated, with lessons fed back into the risk assessment.', ev:'Incident log (use the Monitoring tab), post-incident reviews.', eu:'Art. 26(5), Art. 73', uk:'Operational resilience', iso:'10.2', nist:'MANAGE 4.3' },
+  { id:'TEC-6', a:'tech', when:(c: Ctx)=>c.genai||c.gpai, q:'The energy use and environmental impact of training and running the system are estimated and recorded, and considered in design choices.', ev:'Compute and energy estimates, provider disclosures, design decision record.', eu:'', uk:'', iso:'', nist:'MEASURE 2.12' },
+
+  { id:'MON-1', a:'mon', q:'Performance, fairness and drift are monitored in production against thresholds, with named owners and alert routes.', ev:'Monitoring dashboard, thresholds, alert history (use the Monitoring tab).', eu:'Art. 72, Art. 26(5)', uk:'SS1/23 ongoing monitoring', iso:'9.1, A.6', nist:'MEASURE 1.2, MEASURE 2.4, MEASURE 3.1, MEASURE 3.2, MEASURE 4.3, MANAGE 2.2, MANAGE 4.1' },
+  { id:'MON-2', a:'mon', q:'Incidents are logged, triaged by severity and investigated, with lessons fed back into the risk assessment.', ev:'Incident log (use the Monitoring tab), post-incident reviews.', eu:'Art. 26(5), Art. 73', uk:'Operational resilience', iso:'10.2', nist:'GOVERN 4.3, MANAGE 2.3, MANAGE 4.3' },
   { id:'MON-3', a:'mon', when:(c: Ctx)=>c.high, q:'A route exists to report serious incidents to the market surveillance authority within the legal deadline.', ev:'Reporting procedure, authority contacts, decision log.', eu:'Art. 73', uk:'Operational resilience', iso:'10.2', nist:'MANAGE 4.3' },
-  { id:'MON-4', a:'mon', q:'Retirement is planned: data and model residuals are handled, users are told and dependencies are removed.', ev:'Decommissioning plan.', eu:'Art. 20', uk:'SS1/23 Principle 3', iso:'A.6', nist:'GOVERN 1.7' },
+  { id:'MON-4', a:'mon', q:'Retirement is planned: data and model residuals are handled, users are told and dependencies are removed.', ev:'Decommissioning plan.', eu:'', uk:'SS1/23 Principle 3', iso:'A.6', nist:'GOVERN 1.7, MANAGE 4.1' },
+
+  { id:'MON-5', a:'mon', when:(c: Ctx)=>c.high&&c.provider, q:'If the system does not conform, it is corrected, withdrawn, disabled or recalled, and distributors, deployers, the authorised representative and importers (and the authority where there is a risk) are told.', ev:'Corrective action procedure, notification templates, decision log.', eu:'Art. 20, Art. 79', uk:'Operational resilience', iso:'10.2', nist:'MANAGE 2.3, MANAGE 2.4' },
 
   { id:'CNF-1', a:'conf', when:(c: Ctx)=>c.high&&c.provider, q:'The conformity assessment route is set (internal control under Annex VI or a notified body under Annex VII) and completed before use.', ev:'Conformity assessment record, notified body certificate where needed.', eu:'Art. 43', uk:'', iso:'', nist:'' },
   { id:'CNF-2', a:'conf', when:(c: Ctx)=>c.high&&c.provider, q:'An EU declaration of conformity is drawn up, CE marking applied and the system registered in the EU database.', ev:'Declaration, CE marking evidence, registration number.', eu:'Art. 47–49', uk:'', iso:'', nist:'' },
-  { id:'CNF-3', a:'conf', when:(c: Ctx)=>c.high&&c.deployer, q:'Before use, the deployer confirmed the provider’s conformity and registration and assigned oversight staff.', ev:'Provider declaration on file, deployer checklist.', eu:'Art. 26', uk:'', iso:'', nist:'' },
+  { id:'CNF-3', a:'conf', when:(c: Ctx)=>c.high&&c.deployer, q:'Before use, the deployer confirmed the provider’s conformity and registration, uses the system in line with its instructions for use and assigned competent oversight staff.', ev:'Provider declaration on file, deployer checklist, instructions for use.', eu:'Art. 26(1)-(3)', uk:'', iso:'', nist:'' },
+  { id:'CNF-4', a:'conf', when:(c: Ctx)=>c.high&&c.provider, q:'Provider records are kept and available to authorities: name and contact address on the system, technical documentation, QMS records and declaration kept for 10 years, logs kept at least six months, accessibility requirements met, and cooperation with authorities on request.', ev:'Retention schedule, product labelling, authority request procedure.', eu:'Art. 16(b),(l), Art. 18, Art. 19, Art. 21', uk:'', iso:'7.5', nist:'' },
+  { id:'CNF-5', a:'conf', when:(c: Ctx)=>c.high&&c.needsRep, q:'A provider established outside the EU has appointed an authorised representative in the EU by written mandate, before the system is made available.', ev:'Signed mandate, representative contact details.', eu:'Art. 22', uk:'', iso:'', nist:'' },
+  { id:'CNF-6', a:'conf', when:(c: Ctx)=>c.high&&(c.importer||c.distributor), q:'As importer or distributor, the organisation checked the conformity assessment, CE marking, declaration, documentation and instructions before making the system available, and does not supply a system it believes does not conform.', ev:'Pre-supply checklist, copies of the declaration and documentation.', eu:'Art. 23, Art. 24', uk:'', iso:'', nist:'' },
+  { id:'CNF-7', a:'conf', when:(c: Ctx)=>c.high&&c.deployer&&c.publicBody, q:'As a public body or provider of public services, the organisation registered its use of the system in the EU database before putting it into use.', ev:'EU database registration of the deployment.', eu:'Art. 26(8), Art. 49(3)', uk:'', iso:'', nist:'' },
+
+  { id:'GPA-1', a:'gpai', when:(c: Ctx)=>c.gpai, q:'As provider of a general-purpose AI model: technical documentation for the AI Office and information for downstream providers are kept current, a copyright policy is in place, and a public summary of the training content is published.', ev:'Annex XI and XII documentation, copyright policy, training content summary; EU authorised representative if established outside the EU.', eu:'Art. 53, Art. 54', uk:'', iso:'A.6, A.7', nist:'GOVERN 1.1, GOVERN 6.1' },
+  { id:'GPA-2', a:'gpai', when:(c: Ctx)=>c.gpaiSys, q:'For a general-purpose model with systemic risk: state-of-the-art model evaluation including adversarial testing, assessment and mitigation of systemic risks, serious-incident reporting to the AI Office, and adequate cybersecurity.', ev:'Evaluation and red-team reports, systemic risk assessment, incident log, security assessment.', eu:'Art. 55', uk:'', iso:'A.6', nist:'MEASURE 1.3, MEASURE 2.6, MEASURE 2.7, MANAGE 4.3' },
 ];
 
 export const FRAMEWORKS: [FrameworkKey, string][] = [
@@ -186,6 +208,7 @@ export const TIERS: Record<string, { label: string; tone: string }> = {
   limited:    { label:'Limited risk', tone:'info' },
   minimal:    { label:'Minimal risk', tone:'good' },
   review:     { label:'Needs legal review', tone:'crit' },
+  outside:    { label:'Outside the AI Act', tone:'muted' },
   unknown:    { label:'Not classified', tone:'muted' },
 };
 
@@ -200,6 +223,13 @@ export function context(sys: AssessmentData): Ctx {
     high: r.tier === 'high',
     provider: has(p.role,'provider'),
     deployer: has(p.role,'deployer') || !(p.role && p.role.length),
+    importer: has(p.role,'importer'),
+    distributor: has(p.role,'distributor'),
+    needsRep: has(p.role,'provider') && p.established === 'noneu',
+    publicBody: p.publicBody === 'yes' || p.sector === 'public',
+    workplace: p.affects === 'staff' || p.func === 'hr',
+    gpai: yes(c.gpai),
+    gpaiSys: yes(c.gpai) && yes(c.gpaiSys),
     genai: has(p.aiType,'genai'),
     agent: has(p.aiType,'agent'),
     vendor: !!p.source && p.source !== 'inhouse',
@@ -220,7 +250,11 @@ export function classify(sys: AssessmentData): Classification {
   const areas = ANNEX3.filter(([k]) => c.a3 && c.a3[k]);
   const tx = TRANSPARENCY.filter(([k]) => c.t && c.t[k]);
   let tier: string;
-  if (pro.length) {
+  if (c.def === 'no' || yes(c.excl)) {
+    tier = 'outside';
+    if (c.def === 'no') reasons.push('Art. 3(1): not an AI system as the Act defines it (no inference of outputs from inputs with some autonomy)');
+    if (yes(c.excl)) reasons.push('Art. 2: falls under an exclusion from the Act’s scope');
+  } else if (pro.length) {
     tier = 'prohibited';
     pro.forEach(([, t, ref]) => reasons.push(`${ref}: ${t}`));
   } else if (unsure.length) {
@@ -244,13 +278,15 @@ export function classify(sys: AssessmentData): Classification {
   } else {
     tier = 'unknown';
   }
-  if (!answered && tier !== 'prohibited') flags.push('Complete all eight prohibited-practice screens');
+  if (!answered && tier !== 'prohibited' && tier !== 'outside') flags.push('Complete all eight prohibited-practice screens');
+  if (c.def === 'unsure') flags.push('Confirm whether the system meets the AI system definition (Art. 3(1)) with legal counsel');
   const regions = p.regions || [];
   const euScope = !regions.length || has(regions,'eu');
   if (!euScope) flags.push('Not deployed in the EU. The AI Act can still apply if outputs are used in the EU (Art. 2(1)(c)).');
-  if (yes(c.gpai)) flags.push('You place a general-purpose AI model on the market: GPAI provider duties apply (Art. 53–55)');
+  if (yes(c.gpai)) flags.push(yes(c.gpaiSys) ? 'You place a general-purpose AI model with systemic risk on the market: Art. 53–55 duties apply, including evaluation, adversarial testing and incident reporting' : 'You place a general-purpose AI model on the market: GPAI provider duties apply (Art. 53–54)');
+  if (tier === 'high' && has(p.role,'provider') && p.established === 'noneu') flags.push('Provider established outside the EU: appoint an authorised representative in the EU (Art. 22)');
   const fria = tier === 'high' && (has(p.role,'deployer') || !(p.role||[]).length) &&
-    (p.sector === 'public' || (c.a3 && (c.a3.h_credit || c.a3.h_ins)));
+    (p.publicBody === 'yes' || p.sector === 'public' || (c.a3 && (c.a3.h_credit || c.a3.h_ins)));
   return { tier, reasons, flags, euScope, fria };
 }
 
@@ -261,15 +297,23 @@ export function obligations(sys: AssessmentData): { region: string; items: [stri
   const eu = !regions.length || has(regions,'eu'), uk = has(regions,'uk'), us = has(regions,'us');
   if (eu) {
     const list: [string, string][] = [];
+    if (r.tier === 'outside') list.push(['Outside the AI Act on the current answers: record the reasoning, and revisit it if the purpose or design changes','Art. 2, Art. 3(1)']);
     if (r.tier === 'prohibited') list.push(['Stop or redesign: the practice is banned in the EU','Art. 5']);
     if (r.tier === 'review') list.push(['Resolve the prohibited-practice screens with legal counsel before going further','Art. 5']);
     if (r.tier === 'high') {
       if (x.provider) list.push(['Provider duties: risk management, data governance, technical documentation, logging, transparency, oversight, accuracy, QMS, conformity assessment, registration','Art. 8–17, 43–49']);
-      if (x.deployer) list.push(['Deployer duties: use per instructions, assign trained oversight, monitor, keep logs, inform affected people','Art. 26']);
+      if (x.provider && x.needsRep) list.push(['Appoint an authorised representative in the EU','Art. 22']);
+      if (x.importer) list.push(['Importer checks before placing on the market: conformity assessment, documentation, CE marking, declaration','Art. 23']);
+      if (x.distributor) list.push(['Distributor checks before making available: CE marking, declaration, instructions for use','Art. 24']);
+      if (x.deployer) list.push(['Deployer duties: use per instructions, assign trained oversight, relevant input data, monitor, keep logs, inform affected people','Art. 26']);
+      if (x.deployer && x.workplace) list.push(['Tell workers and their representatives before use at the workplace','Art. 26(7)']);
+      if (x.deployer && x.publicBody) list.push(['Register your use in the EU database before putting it into use','Art. 26(8), 49(3)']);
       if (r.fria) list.push(['Fundamental rights impact assessment before first use','Art. 27']);
+      list.push(['Right to an explanation for people affected by decisions based on its output','Art. 86']);
     }
-    if (r.tier === 'limited') list.push(['Transparency: tell people they are dealing with AI and label synthetic content','Art. 50']);
-    list.push(['AI literacy for staff who operate or use the system','Art. 4']);
+    if (r.tier !== 'outside' && TRANSPARENCY.some(([k]) => (sys.cls?.t || {})[k])) list.push(['Transparency: tell people they are dealing with AI and label synthetic content','Art. 50']);
+    if (x.gpai) list.push([x.gpaiSys ? 'General-purpose AI model with systemic risk: documentation, copyright policy, training summary, evaluations, incident reporting, cybersecurity' : 'General-purpose AI model: documentation, copyright policy, training content summary','Art. 53–55']);
+    if (r.tier !== 'outside') list.push(['AI literacy for staff who operate or use the system','Art. 4']);
     if (x.personal) list.push(['GDPR applies alongside the AI Act','GDPR']);
     out.push({ region:'European Union', items:list });
   }
@@ -290,6 +334,7 @@ export function obligations(sys: AssessmentData): { region: string; items: [stri
 
 export function applicable(sys: AssessmentData): Control[] {
   const x = context(sys);
+  if (classify(sys).tier === 'outside') return CONTROLS.filter(k => k.id === 'GOV-3');
   return CONTROLS.filter(k => !k.when || k.when(x));
 }
 
@@ -306,7 +351,7 @@ export function inherentRisk(sys: AssessmentData): { score: number; band: string
   const known = parts.filter((v): v is number => v !== null);
   if (known.length < 3) return null;
   const tier = classify(sys).tier;
-  const tierPts = ({ prohibited:3, review:3, high:3, limited:1, minimal:0, unknown:1 } as Record<string, number>)[tier];
+  const tierPts = ({ prohibited:3, review:3, high:3, limited:1, minimal:0, outside:0, unknown:1 } as Record<string, number>)[tier];
   const tech = (has(p.aiType,'genai') || has(p.aiType,'agent')) ? 1 : 0;
   const sum = known.reduce((a,b)=>a+b,0) + tierPts + tech;
   const max = known.length*3 + 3 + 1;
@@ -353,6 +398,9 @@ export function metricStatus(m: Metric): { tone: string; label: string } {
 
 /* "Why we ask" notes for the classification questions, in plain language. */
 export const WHY: Record<string, string> = {
+  scope: 'The Act only covers machine-based systems that infer from their inputs how to generate outputs such as predictions, content, recommendations or decisions (Art. 3(1)). Simple rules written by people are not AI systems. Some uses are excluded altogether (Art. 2).',
+  exclusion: 'Excluded from the Act: AI used only for military, defence or national security purposes; AI developed and used only for scientific research; research and testing before the system is placed on the market (other than in real-world conditions); and purely personal, non-professional use (Art. 2(3), (6), (8), (10)).',
+  gpaiSys: 'A general-purpose model has systemic risk when it has high-impact capabilities, presumed when training used more than 10^25 floating-point operations, or when the Commission designates it (Art. 51).',
   prohibited: 'Article 5 bans a short list of practices outright in the EU since February 2025. If any applies, nothing else in the assessment matters until it is resolved.',
   annex3: 'Systems used in the areas listed in Annex III are presumed high-risk, because they can decide access to work, money, insurance, education or public services.',
   annex1: 'AI that is a safety component of a product already regulated by EU product-safety law (machinery, medical devices, toys and others) is high-risk through that route.',

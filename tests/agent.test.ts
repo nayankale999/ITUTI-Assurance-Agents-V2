@@ -7,10 +7,10 @@ import type { AssessmentData } from '../src/lib/assurance';
 
 const base: AssessmentData = { profile: { name: 'Loan scoring', regions: ['eu'] }, cls: { a3: {}, t: {} }, ctrl: {}, card: {}, metrics: [] };
 
-test('every catalogue path is unique and covers all 39 controls', () => {
+test('every catalogue path is unique and covers all 51 controls', () => {
   const paths = fieldCatalogue().map(f => f.path);
   assert.equal(new Set(paths).size, paths.length);
-  assert.equal(paths.filter(p => p.startsWith('ctrl.')).length, 39);
+  assert.equal(paths.filter(p => p.startsWith('ctrl.')).length, 51);
 });
 
 test('values are validated against the field type', () => {

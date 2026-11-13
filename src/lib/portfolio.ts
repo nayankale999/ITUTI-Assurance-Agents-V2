@@ -38,7 +38,7 @@ export function riskSummary(rows: InventoryRow[]) {
   const avg = scored.length ? Math.round(scored.reduce((a, r) => a + r.score!, 0) / scored.length * 100) / 100 : null;
   const dist = [
     ['minimal', 'Minimal', 'good'], ['limited', 'Limited', 'info'], ['high', 'High', 'warn'], ['prohibited', 'Prohibited', 'crit'],
-    ['review', 'Needs legal review', 'crit'], ['unknown', 'Not classified', 'muted'],
+    ['review', 'Needs legal review', 'crit'], ['outside', 'Outside the AI Act', 'muted'], ['unknown', 'Not classified', 'muted'],
   ].map(([k, l, tone]) => ({ key: k, label: l, tone, count: rows.filter(r => r.tier === k).length }));
   return { avg, dist, flagged: rows.filter(r => r.reassess.length), unconfirmed: rows.filter(r => !r.confirmed && r.tier !== 'unknown') };
 }

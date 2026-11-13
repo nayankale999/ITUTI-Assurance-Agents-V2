@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/data';
 import { requireViewer, systemAccess } from '@/lib/session';
+import { nistCoverage } from '@/lib/nist';
 import { PROFILE_SECTIONS, OPTS, AREAS, TIERS, classify, obligations, applicable, inherentRisk, readiness, frameworkCoverage, metricStatus, type AssessmentData } from '@/lib/assurance';
 import { residualText } from '@/lib/report';
 import { PrintButton } from '@/components/PrintButton';
@@ -58,6 +59,13 @@ export default async function Report({ params }: { params: Promise<{ slug: strin
         <h2>Framework coverage</h2>
         <table><thead><tr><th>Framework</th><th>Controls mapped</th><th>Readiness</th><th>Not met</th><th>Partial</th><th>Open</th></tr></thead>
           <tbody>{frameworkCoverage(sys).map(f => <tr key={f.key}><td>{f.name}</td><td>{f.count}</td><td>{f.r.pct}%</td><td>{f.r.gap}</td><td>{f.r.partial}</td><td>{f.r.open}</td></tr>)}</tbody></table>
+        <h2>NIST AI RMF 1.0 coverage</h2>
+        {(() => { const n = nistCoverage(sys); const word: Record<string, string> = { met: 'Met', partial: 'Partial', gap: 'Not met', open: 'Open', na: 'N/A', notApplicable: 'Not applicable' }; return (<>
+          <table><thead><tr><th>Function</th><th>Subcategories in scope</th><th>Met</th><th>Partial</th><th>Not met</th><th>Open</th></tr></thead>
+            <tbody>{n.byFn.map(f => <tr key={f.fn}><td>{f.fn}</td><td>{f.inScope} of {f.total}</td><td>{f.met}</td><td>{f.partial}</td><td>{f.gap}</td><td>{f.open}</td></tr>)}</tbody></table>
+          <table><thead><tr><th>Subcategory</th><th>Outcome</th><th>Controls</th><th>Status</th></tr></thead>
+            <tbody>{n.rows.filter(r => r.status !== 'notApplicable').map(r => <tr key={r.id}><td className="ref">{r.id}</td><td>{r.text}</td><td className="ref">{r.controls.join(', ')}</td><td>{word[r.status]}</td></tr>)}</tbody></table>
+        </>); })()}
         <h2>Control assessment</h2>
         {AREAS.map(([ar, name]) => {
           const items = list.filter(k => k.a === ar);

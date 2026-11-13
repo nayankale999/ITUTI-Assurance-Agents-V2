@@ -2,7 +2,7 @@
 
 A multi-client web app for assessing AI systems against the **EU AI Act**, **UK requirements** (AI principles, FCA Consumer Duty, SM&CR, PRA SS1/23), **ISO/IEC 42001** and the **NIST AI RMF**. Runs at `assurance.ituti.tech` on Hostinger, styled to match the ITUTI Tech website (www.ituti.tech), which links to it from its AI Assurance page and a "Client login" link on every page.
 
-For each AI system the app records a profile, classifies it under the EU AI Act, lists the obligations that apply in the EU and UK, and assesses it against up to 39 controls mapped to all four frameworks. It also keeps a model card, performance and fairness metrics, and an incident log. Printable assurance reports and model cards can be saved as PDF from the browser.
+For each AI system the app records a profile, classifies it under the EU AI Act, lists the obligations that apply in the EU and UK, and assesses it against up to 51 controls mapped to all four frameworks (every one of the 72 NIST AI RMF 1.0 subcategories is evidenced by at least one control). It also keeps a model card, performance and fairness metrics, and an incident log. Printable assurance reports and model cards can be saved as PDF from the browser.
 
 ## Documentation
 
@@ -55,13 +55,14 @@ A run is a crew of specialist agents, each with its own instructions, tools, fie
 
 | Specialist | Does | Proposes |
 |---|---|---|
-| Model researcher | Looks up what the provider publishes about the foundation models named in the profile | – |
 | Evidence reader | Reads the documents and writes an evidence map (topics, sections, exact quotes) for the writers | – |
 | Risk classifier | Profile and EU AI Act classification | `profile.*`, `cls.*` |
 | Controls assessor | Rates each control from the client's own documents | `ctrl.*` |
 | Documentation writer | Model card and monitoring metrics | `card.*`, `metric.*` |
 | Conformity writer | Article 43 / Annex VI answers | `conf.*` |
-| Source checker | Verifies every quote before a proposal is stored (no model calls) | – |
+| Source checker | Verifies every quote against the documents or the recorded answers, and runs the grounding judge that sends back any statement the quotes do not support | – |
+
+**Grounding.** The crew uses only the evidence documents uploaded for a system and the answers people have entered in its assessment. It does no web research and brings in no outside facts: every proposal must cite an exact quote from a document or a recorded answer, and the grounding judge (one short call that sees only the value and its quotes) rejects anything the quotes do not support. A model researcher that looks up what foundation-model providers publish exists but is off unless `AGENT_EXTERNAL_RESEARCH=on`. `AGENT_GROUNDING_JUDGE=off` turns the judge off (not recommended).
 
 A specialist cannot propose outside its fields. Each one's model calls, tokens (input, cache reads and writes, output), estimated cost, tool calls, proposals and time are stored per run in `agent_runs.usage_detail` and shown on the crew cards and, for Ituti admins, on the client's page (*Model use this month, by agent*). Optional settings: `ANTHROPIC_MODEL_<SPECIALIST>` to give one specialist another model (for example `ANTHROPIC_MODEL_READER=claude-sonnet-5-5`), and `ANTHROPIC_PRICES` (JSON, US dollars per million tokens by model id) to change the cost estimates. Web searches by the model researcher are billed separately by Anthropic and are not in the estimate.
 
@@ -118,7 +119,7 @@ Every specialist is also an A2A agent of its own, so it can be registered separa
 
 `/api/a2a/agents/evidence-reader`, `model-researcher`, `risk-classifier`, `controls-assessor`, `documentation-writer`, `conformity-writer`, `source-checker`
 
-Each has its agent card at `<address>/.well-known/agent-card.json`. Called directly, the evidence reader answers questions from a system's documents with quotes, the model researcher looks up a model, the source checker verifies a quote, and each writer starts a run of just that specialist (with the reader and checker in support) and reports its proposals and cost. The same billing rules apply.
+Each has its agent card at `<address>/.well-known/agent-card.json`. Called directly, the evidence reader answers questions from a system's documents with quotes, the model researcher (only when outside research is switched on) looks up a model, the source checker verifies a quote, and each writer starts a run of just that specialist (with the reader and checker in support) and reports its proposals and cost. The same billing rules apply.
 
 ### Traces in watsonx Orchestrate (observability and FinOps)
 

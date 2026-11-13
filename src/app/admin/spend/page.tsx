@@ -112,7 +112,7 @@ export default async function SpendPage({ searchParams }: { searchParams: Promis
               <label className="check" style={{ alignSelf: 'center' }}><input type="checkbox" name="hardStop" /> Stop new AI work when reached</label>
               <Submit className="btn primary">Save budget</Submit>
             </ActionForm>
-            <p className="muted" style={{ fontSize: 12, margin: 0 }}>Costs are estimates at Anthropic list prices; set ANTHROPIC_PRICES on the server for negotiated rates. Web searches by the model researcher are billed separately by Anthropic and are not included.</p>
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>Costs are estimates at Anthropic list prices; set ANTHROPIC_PRICES on the server for negotiated rates. Web searches (only when outside research is switched on) are billed separately by Anthropic and are not included.</p>
           </div>
         </section>
       </main>

@@ -86,7 +86,7 @@ watsonx Orchestrate, set the `ORCHESTRATE_*` settings and each agent's traces ar
 ## The agents
 
 The platform's agents run inside the application and are published over A2A 0.3.0 at your own address:
-`APP_URL/api/a2a` (main agent) and `APP_URL/api/a2a/agents/<specialist>` for the evidence reader, model researcher,
+`APP_URL/api/a2a` (main agent) and `APP_URL/api/a2a/agents/<specialist>` for the evidence reader, model researcher (only with `AGENT_EXTERNAL_RESEARCH=true`),
 risk classifier, controls assessor, documentation writer, conformity writer and source checker. Register them in any
 A2A control plane with a client API key created on the client's page.
 

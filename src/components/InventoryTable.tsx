@@ -5,7 +5,7 @@ import Link from 'next/link';
 import type { InventoryRow } from '@/lib/portfolio';
 
 const tone = (s: number | null) => (s == null ? 'muted' : s >= 4 ? 'crit' : s >= 3 ? 'warn' : s >= 2 ? 'info' : 'good');
-const TIER_ORDER = ['prohibited', 'review', 'high', 'limited', 'minimal', 'unknown'];
+const TIER_ORDER = ['prohibited', 'review', 'high', 'limited', 'minimal', 'outside', 'unknown'];
 
 export function InventoryTable({ rows, slug, readOnly }: { rows: InventoryRow[]; slug: string; readOnly: Set<string> | string[] | null }) {
   const ro = new Set(readOnly || []);
